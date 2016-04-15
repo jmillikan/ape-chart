@@ -24,10 +24,10 @@ import Db
 runApp :: IO ()
 runApp = do
 
-  Sqlite.runSqlite "prices.db" $ Sqlite.runMigration migrateAll
+  Sqlite.runSqlite "main.db" $ Sqlite.runMigration migrateAll
 
   -- Go back over this in... "The future"
-  runNoLoggingT $ Sqlite.withSqlitePool "prices.db" 10 $ \pool -> do
+  runNoLoggingT $ Sqlite.withSqlitePool "main.db" 10 $ \pool -> do
     let withDb f = runSqlPersistMPool f pool
 
     NoLoggingT $ runSpock 8080 $ spockT id $ do
