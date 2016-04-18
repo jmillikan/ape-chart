@@ -25,6 +25,7 @@ library
                      , transformers
                      , http-types
                      , aeson
+                     , esqueleto
   default-language:    Haskell2010
 
 executable app-guide-exe

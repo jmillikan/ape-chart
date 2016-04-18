@@ -13,11 +13,11 @@ import Control.Arrow
 import Data.Int (Int64)
 import System.Environment
 
-import Database.Persist hiding (get)
-import Database.Persist.Sql hiding (get)
+import qualified Database.Persist as P
 import qualified Database.Persist.Sqlite as Sqlite
 import Network.HTTP.Types.Status
 import Web.Spock.Safe
+import Database.Esqueleto hiding (get)
 
 import Db
 
@@ -31,5 +31,17 @@ runApp = do
     let withDb f = runSqlPersistMPool f pool
 
     NoLoggingT $ runSpock 8080 $ spockT id $ do
+      get ("state" <//> var <//> "process" <//> var) $ \(stateId :: Int64) (processId :: Int64) -> do
+        (state, cps) <- liftIO $ withDb (getProcessState (toSqlKey stateId) (toSqlKey processId))
 
-      return ()
+        json (state, cps)
+
+getProcessState :: StateId -> ProcessId -> SqlPersistM (Entity State, [(Entity Command, Entity CommandProcess)])
+getProcessState stateId processId = do
+  [state] <- select $ from $ \state -> where_ (state ^. StateId ==. val stateId) >> return state
+  procCommands <- select $ from $ \(c `InnerJoin` cp) -> do
+    on (c ^. CommandId ==. cp ^. CommandProcessCommandId)
+    where_ (cp ^. CommandProcessProcessId ==. val processId)
+    return (c, cp)
+  return (state, procCommands)
+  
