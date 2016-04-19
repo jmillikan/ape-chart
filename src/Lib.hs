@@ -71,7 +71,7 @@ runApp = do
         resultStateId <- param "resultStateId"
          
         withDb $ update (toSqlKey commandIdRaw)
-          [ CommandResultStateId =. (toSqlKey <$> read <$> resultStateId)
+          [ CommandResultStateId =. toSqlKey <$> read <$> resultStateId
           , CommandMethodType =. methodType
           , CommandMethod =. method
           , CommandDescription =. desc 
@@ -105,5 +105,3 @@ getProcessState stateId processId = do
     where_ (c ^. CommandStateId ==. val stateId)
     return (c, cp)
   return (state, procCommands)
-
-  
