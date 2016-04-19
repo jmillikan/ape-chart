@@ -21,11 +21,11 @@ State json
 --   text T.Text
 --   deriving Show
 Command json
-  stateId StateId Maybe
+  stateId StateId
   methodType T.Text
   method T.Text
   description T.Text
-  resultStateId StateId
+  resultStateId StateId Maybe
   deriving Show
 Process json
   appId AppId -- Possible for DB to contain commands linked to process for wrong app.
