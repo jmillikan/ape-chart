@@ -27,6 +27,7 @@ library
                      , aeson
                      , esqueleto
                      , unordered-containers
+                     , wai-middleware-static
   default-language:    Haskell2010
 
 executable app-guide-exe

@@ -22,29 +22,23 @@ main = do
     NoLoggingT $ hspec $ spec (spockAsApp $ app pool)
 
 spec wai = with wai $ do
-  describe "Basically runs" $ do
-    it "responds with 200" $ do
-      get "/state/1/process/1" `shouldRespondWith` 200
-
-  -- Scripty tests are NOT ideal, but better than nothing
+  -- Scripty tests are not a spec and not ideal, but better than nothing
   -- test.db starts with 3 states, 5 commands, 1 process, and *should* auto-increment cleanly
 
-  describe "Adding and retreiving states" $ do
-    it "succeeds in adding a state" $ do
+  describe "States" $ do
+    it "can be added" $ do
       postHtmlForm "/state"
         [ ("appId", "1")
         , ("name", "Complete rotation")
         , ("description", "Set parameters for rotation of selected objects")
         ] `shouldRespondWith` 200
 
-    it "finds the resulting state" $ do
-      get "/state/4/process/1" `shouldRespondWith` 200
+    it "can be found once added" $ get "/state/4/process/1" `shouldRespondWith` 200
 
-    it "Should not find fake states" $ do
-      get "/state/5/process/1" `shouldRespondWith` 404
+    it "404 if they don't exist" $ get "/state/5/process/1" `shouldRespondWith` 404
 
-  describe "Adding and retrieving commands in a process" $ do
-    it "Adds a command" $ do
+  describe "Commands" $ do
+    it "can be added in a process" $ do
       postHtmlForm "/state/1/process/1/command" 
         [ ("methodType", "keyboard-emacs")
         , ("method", "r")
@@ -53,8 +47,17 @@ spec wai = with wai $ do
         , ("resulteStateId", "4")
         ] `shouldRespondWith` 200
 
-    it "Finds the command" $ do
-      get "/command/6" `shouldRespondWith` 200
+    it "can be found once added" $ get "/command/6" `shouldRespondWith` 200
 
-    it "Should not find fake commands" $ do
-      get "/command/7" `shouldRespondWith` 404
+    it "404 if they don't exist" $ get "/command/7" `shouldRespondWith` 404
+
+  describe "Apps" $ do
+    it "Can be added" $ do
+      postHtmlForm "/app"
+        [ ("name", "ASP.NET MVC")
+        , ("description", "ASP.NET MVC Web Framework in the Rails style")
+        ] `shouldRespondWith` 200
+
+    it "Can be found once added" $ get "/app/2" `shouldRespondWith` 200
+      
+    it "404 if they don't exist" $ get "/app/3" `shouldRespondWith` 404

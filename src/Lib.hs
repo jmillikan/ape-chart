@@ -21,6 +21,7 @@ import Database.Persist ((=.))
 import Database.Esqueleto hiding (update, get, Value, (=.), select)
 import qualified Database.Persist.Sqlite as Sqlite
 import Web.Spock.Safe
+import qualified Network.Wai.Middleware.Static as M
 import Network.HTTP.Types.Status
 
 import Db
@@ -49,21 +50,28 @@ runApp dbFilename portNum = do
 app pool = spockT id $ do
   let withDb f = liftIO $ runSqlPersistMPool f pool
 
-  -- These are shaped like REST endpoints but really, really aren't
+  middleware $ M.staticPolicy $ M.addBase "frontend"
+
+  -- Some of these are shaped like REST endpoints but really aren't
   get ("state" <//> var <//> "process" <//> var) $ \stateId processId -> do
     state <- withDb $ getProcessState (toSqlKey stateId) (toSqlKey processId)
     maybe (setStatus notFound404) json state 
 
   -- For testing porpoises >_<
   get ("command" <//> var) $ \commandId -> do
-    command <- withDb (P.get (toSqlKey commandId :: Key Command))
+    (command :: Maybe Command) <- withDb (P.get $ toSqlKey commandId)
     maybe (setStatus notFound404) json command
 
+  get ("app" <//> var) $ \appId -> do
+    (command :: Maybe App) <- withDb (P.get $ toSqlKey appId)
+    maybe (setStatus notFound404) json command
+
+  -- New command in a process, with optional result state
   post ("state" <//> var <//> "process" <//> var <//> "command") $ \stateId processId -> do
-    (Just methodType) <- param "methodType"
-    (Just method) <- param "method"
-    (Just desc) <- param "desc"
-    (Just note) <- param "note"
+    methodType <- param' "methodType"
+    method <- param' "method"
+    desc <- param' "desc"
+    note <- param' "note"
     resultStateId <- param "resultStateId"
     commandId <- withDb $ do -- Transaction???
       commandId <- P.insert $ Command (toSqlKey stateId) methodType method desc (toSqlKey <$> read <$> resultStateId) 
@@ -71,17 +79,25 @@ app pool = spockT id $ do
       return commandId
     json $ fromSqlKey commandId
 
+  -- Blanket "add" endpoints...
   post ("state") $ do
-    (Just appId) <- param "appId"
-    (Just name) <- param "name"
-    (Just description) <- param "description"
+    appId <- param' "appId"
+    name <- param' "name"
+    description <- param' "description"
     stateId <- withDb $ P.insert $ State appId name description
     json $ fromSqlKey stateId
 
+  post ("app") $ do
+    name <- param' "name"
+    description <- param' "description"
+    appId <- withDb $ P.insert $ App name description
+    json $ fromSqlKey appId
+  
+-- Update command...
   post ("command" <//> var) $ \commandIdRaw -> do
-    (Just methodType) <- param "methodType"
-    (Just method) <- param "method"
-    (Just desc) <- param "desc"
+    methodType <- param' "methodType"
+    method <- param' "method"
+    desc <- param' "desc"
     resultStateId <- param "resultStateId"
 
     withDb $ P.update (toSqlKey commandIdRaw)
@@ -93,9 +109,9 @@ app pool = spockT id $ do
 
     json commandIdRaw
 
-  -- Add a command to a process/edit a command-process
+  -- Add or change command-in-process
   post ("command" <//> var <//> "process" <//> var) $ \(commandId :: Int64) (processId :: Int64) -> do
-    (Just note) <- param "note"
+    note <- param' "note"
 
     withDb $ do
       found <- E.select $ from $ \cp -> do
