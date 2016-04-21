@@ -11,6 +11,7 @@ import Control.Monad.Logger
 import Data.Int (Int64)
 import Data.Aeson hiding (json)
 import Data.Text (Text, pack)
+import Data.Maybe
 import qualified Data.HashMap.Strict as HM (insert)
 
 -- These four identifiers are the subject of collisions *and* confusion...
@@ -20,6 +21,7 @@ import Database.Persist ((=.))
 import Database.Esqueleto hiding (update, get, Value, (=.), select)
 import qualified Database.Persist.Sqlite as Sqlite
 import Web.Spock.Safe
+import Network.HTTP.Types.Status
 
 import Db
 
@@ -40,7 +42,7 @@ runApp :: String -> Int -> IO ()
 runApp dbFilename portNum = do
   Sqlite.runSqlite (pack dbFilename) $ Sqlite.runMigration migrateAll
 
-  -- Go back over this in... "The future"
+  -- Go back over setup stuff in... "The future"
   runNoLoggingT $ Sqlite.withSqlitePool (pack dbFilename) 10 $ \pool ->
     NoLoggingT $ runSpock portNum $ app pool
   
@@ -50,8 +52,12 @@ app pool = spockT id $ do
   -- These are shaped like REST endpoints but really, really aren't
   get ("state" <//> var <//> "process" <//> var) $ \stateId processId -> do
     state <- withDb $ getProcessState (toSqlKey stateId) (toSqlKey processId)
+    maybe (setStatus notFound404) json state 
 
-    json (StateForProcess state)
+  -- For testing porpoises >_<
+  get ("command" <//> var) $ \commandId -> do
+    command <- withDb (P.get (toSqlKey commandId :: Key Command))
+    maybe (setStatus notFound404) json command
 
   post ("state" <//> var <//> "process" <//> var <//> "command") $ \stateId processId -> do
     (Just methodType) <- param "methodType"
@@ -59,11 +65,18 @@ app pool = spockT id $ do
     (Just desc) <- param "desc"
     (Just note) <- param "note"
     resultStateId <- param "resultStateId"
-    withDb $ do -- Transaction???
+    commandId <- withDb $ do -- Transaction???
       commandId <- P.insert $ Command (toSqlKey stateId) methodType method desc (toSqlKey <$> read <$> resultStateId) 
-      cpId <- P.insert $ CommandProcess (toSqlKey processId) commandId note
-      return ()
-    return ()
+      _ <- P.insert $ CommandProcess (toSqlKey processId) commandId note
+      return commandId
+    json $ fromSqlKey commandId
+
+  post ("state") $ do
+    (Just appId) <- param "appId"
+    (Just name) <- param "name"
+    (Just description) <- param "description"
+    stateId <- withDb $ P.insert $ State appId name description
+    json $ fromSqlKey stateId
 
   post ("command" <//> var) $ \commandIdRaw -> do
     (Just methodType) <- param "methodType"
@@ -78,7 +91,7 @@ app pool = spockT id $ do
       , CommandDescription =. desc 
       ]
 
-    return ()
+    json commandIdRaw
 
   -- Add a command to a process/edit a command-process
   post ("command" <//> var <//> "process" <//> var) $ \(commandId :: Int64) (processId :: Int64) -> do
@@ -98,12 +111,14 @@ app pool = spockT id $ do
           P.insert $ CommandProcess (toSqlKey processId) (toSqlKey commandId) note
           return ()
 
-
-getProcessState :: StateId -> ProcessId -> SqlPersistM (Entity State, [(Entity Command, Maybe (Entity CommandProcess))])
+getProcessState :: StateId -> ProcessId -> SqlPersistM (Maybe StateForProcess)
 getProcessState stateId processId = do
-  [state] <- E.select $ from $ \state -> where_ (state ^. StateId ==. val stateId) >> return state
-  procCommands <- E.select $ from $ \(c `LeftOuterJoin` cp) -> do
-    on (just (c ^. CommandId) ==. cp ?. CommandProcessCommandId &&. cp ?. CommandProcessProcessId ==. just (val processId))
-    where_ (c ^. CommandStateId ==. val stateId)
-    return (c, cp)
-  return (state, procCommands)
+  s <- E.select $ from $ \state -> where_ (state ^. StateId ==. val stateId) >> return state
+  case s of 
+    [] -> return Nothing
+    [state] -> do
+      procCommands <- E.select $ from $ \(c `LeftOuterJoin` cp) -> do
+        on (just (c ^. CommandId) ==. cp ?. CommandProcessCommandId &&. cp ?. CommandProcessProcessId ==. just (val processId))
+        where_ (c ^. CommandStateId ==. val stateId)
+        return (c, cp)
+      return $ Just $ StateForProcess (state, procCommands)
