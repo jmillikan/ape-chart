@@ -1,8 +1,19 @@
 <!doctype html>
-<html>
-  <head><title>App Guide</title></head>
+<html ng-app="app-guide">
+  <head><title>App Guide</title>
+
+  <link rel="stylesheet" href="bootstrap.min.css">
+
+  </head>
   <body>
+    <div class="container-fluid">
     <h1>App Guide...</h1>
-    <p>Paragraph. Paragraph. Paragraph. Paragraph. Paragraph. Paragraph. Paragraph. Paragraph. </p>
+    <div ng-controller="FudgeController">
+      <h2>(Fudge Controller)</h2>
+      <div ng-include="'/partials/state.html'">
+      </div>
+    </div>
+    <script type="text/javascript" src="angular.min.js"></script>
+    <script type="text/javascript" src="app.js"></script>
   </body>
 </html>
