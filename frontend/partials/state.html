@@ -1,0 +1,17 @@
+<div ng-controller="StateController">
+  <h3><input type="text" ng-model="state.name"><input type="text" ng-model="state.description"></h3>
+  <ul>
+    <li ng-repeat="command in state.commands">
+      <div ng-controller="CommandController">
+        <h4>
+          <input ng-disabled="noExpand" type="checkbox" ng-model="expandResultState">
+          <input class="state-method" type="text" ng-model="command.method">
+          <input type="text" ng-model="command.description" class="state-desc">
+        </h4>
+        <div ng-if="command.resultStateId && expandResultState" ng-include="'partials/state.html'">
+          
+        </div>
+      </div>
+    </li>
+  </ul>
+</div>
