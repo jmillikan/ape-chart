@@ -53,18 +53,15 @@ app pool = spockT id $ do
   middleware $ M.staticPolicy $ M.addBase "frontend"
 
   -- Some of these are shaped like REST endpoints but really aren't
+  
+  -- Endpoints CURRENTLY exercised by frontend
   get ("state" <//> var <//> "process" <//> var) $ \stateId processId -> do
     state <- withDb $ getProcessState (toSqlKey stateId) (toSqlKey processId)
     maybe (setStatus notFound404) json state 
 
-  -- For testing porpoises >_<
-  get ("command" <//> var) $ \commandId -> do
-    (command :: Maybe Command) <- withDb (P.get $ toSqlKey commandId)
-    maybe (setStatus notFound404) json command
-
-  get ("app" <//> var) $ \appId -> do
-    (command :: Maybe App) <- withDb (P.get $ toSqlKey appId)
-    maybe (setStatus notFound404) json command
+  get ("app" <//> var <//> "state") $ \appId -> do
+    states <- withDb $ E.select $ from $ \s -> where_ (s ^. StateAppId ==. val appId) >> return s
+    json states
 
   -- New command in a process, with optional result state
   post ("state" <//> var <//> "process" <//> var <//> "command") $ \stateId processId -> do
@@ -79,6 +76,15 @@ app pool = spockT id $ do
       return commandId
     json $ fromSqlKey commandId
 
+  -- For testing porpoises >_<
+  get ("command" <//> var) $ \commandId -> do
+    (command :: Maybe Command) <- withDb (P.get $ toSqlKey commandId)
+    maybe (setStatus notFound404) json command
+
+  get ("app" <//> var) $ \appId -> do
+    (command :: Maybe App) <- withDb (P.get $ toSqlKey appId)
+    maybe (setStatus notFound404) json command
+
   -- Blanket "add" endpoints...
   post ("state") $ do
     appId <- param' "appId"
@@ -92,6 +98,14 @@ app pool = spockT id $ do
     description <- param' "description"
     appId <- withDb $ P.insert $ App name description
     json $ fromSqlKey appId
+
+  post ("app" <//> var <//> "process") $ \appId -> do
+    let appKey = toSqlKey appId
+    name <- param' "name"
+    description <- param' "description"
+    (Just app) <- withDb $ P.get appKey
+    processId <- withDb $ P.insert $ Process appKey name description
+    json $ fromSqlKey processId
   
 -- Update command...
   post ("command" <//> var) $ \commandIdRaw -> do
