@@ -6,7 +6,6 @@ appGuide.controller('FudgeController', ['$scope', function($scope){
     $scope.stateId = 1;
     $scope.processId = 1;
     $scope.appId = 1;
-    $scope.stateStack = [1];
 }]);
 
 appGuide.controller('StateController', ['$scope', 'state', function($scope, state){
@@ -15,7 +14,6 @@ appGuide.controller('StateController', ['$scope', 'state', function($scope, stat
     $scope.refreshState = function(){
         state.getProcessState($scope.stateId, $scope.processId, function(s){
             $scope.state = s;
-            HELLO_STATE = s;
         });
     }
 
@@ -38,8 +36,10 @@ appGuide.controller('AddCommandController', ['$scope', 'state', function($scope,
             methodType: 'keyboard-emacs',
             method: '',
             desc: '',
+            note: '',
             resultStateId: '',
-            note: ''
+            stateName: '',
+            stateDesc: ''
         };
     }
 

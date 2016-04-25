@@ -25,10 +25,11 @@
         <input type="text" ng-model="c.desc">
         +
         <select ng-model="c.resultStateId">
+          <option value="">- New -</option>
           <option ng-repeat="state in states" value="{{state.id}}">{{state.name}}</option>
         </select>
-        <input type="text" ng-model="c.stateName">
-        <input type="text" ng-model="c.stateDescription">
+        <input type="text" ng-disabled="c.resultStateId != ''" ng-model="c.stateName">
+        <input type="text" ng-disabled="c.resultStateId != ''" ng-model="c.stateDesc">
         <input type="button" value="Create" ng-click="createCommand()">
       </div>
     </li>

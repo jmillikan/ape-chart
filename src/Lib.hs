@@ -69,9 +69,17 @@ app pool = spockT id $ do
     method <- param' "method"
     desc <- param' "desc"
     note <- param' "note"
-    resultStateId <- param "resultStateId"
+    -- Should be blank rather than missing.
+    -- Is dumb but I'm lazy.
+    resultStateId <- param' "resultStateId"
+    resultStateName <- param' "stateName"
+    resultStateDesc <- param' "stateDesc"
     commandId <- withDb $ do -- Transaction???
-      commandId <- P.insert $ Command (toSqlKey stateId) methodType method desc (toSqlKey <$> read <$> resultStateId) 
+      (Just state) <- P.get $ toSqlKey $ stateId
+      resultStateKey <- case resultStateId of
+        "" -> P.insert $ State (stateAppId state) resultStateName resultStateDesc
+        n -> return $ toSqlKey $ read $ resultStateId
+      commandId <- P.insert $ Command (toSqlKey stateId) methodType method desc (Just resultStateKey)
       _ <- P.insert $ CommandProcess (toSqlKey processId) commandId note
       return commandId
     json $ fromSqlKey commandId
