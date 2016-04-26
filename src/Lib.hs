@@ -84,6 +84,7 @@ app pool = spockT id $ do
       return commandId
     json $ fromSqlKey commandId
 
+  -- Some blanket add & fetch endpoints
   -- For testing porpoises >_<
   get ("command" <//> var) $ \commandId -> do
     (command :: Maybe Command) <- withDb (P.get $ toSqlKey commandId)
@@ -93,7 +94,6 @@ app pool = spockT id $ do
     (command :: Maybe App) <- withDb (P.get $ toSqlKey appId)
     maybe (setStatus notFound404) json command
 
-  -- Blanket "add" endpoints...
   post ("state") $ do
     appId <- param' "appId"
     name <- param' "name"
@@ -115,7 +115,7 @@ app pool = spockT id $ do
     processId <- withDb $ P.insert $ Process appKey name description
     json $ fromSqlKey processId
   
--- Update command...
+  -- Update command...
   post ("command" <//> var) $ \commandIdRaw -> do
     methodType <- param' "methodType"
     method <- param' "method"
@@ -132,6 +132,7 @@ app pool = spockT id $ do
     json commandIdRaw
 
   -- Add or change command-in-process
+  -- Don't think I've tested this yet... at all.
   post ("command" <//> var <//> "process" <//> var) $ \(commandId :: Int64) (processId :: Int64) -> do
     note <- param' "note"
 

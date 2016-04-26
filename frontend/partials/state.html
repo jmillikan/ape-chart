@@ -1,27 +1,18 @@
 <div ng-controller="StateController">
   <div class="inline-form">
-    {{state.name}}
-    <input type="text" ng-model="state.description">
+    {{state.name}} - {{state.description}}
   </div>
 
-  <!-- This controller up here is dumb. -->
+  <!-- This controller up here is dumb, but there's not "one element" for it below. -->
+  <!-- Probably end up with vastly different markup anyhow. -->
   <dl class="dl-horizontal" ng-controller="AddCommandController">
-    <dt ng-repeat-start="command in state.commands">
-      {{command.method}}
-    </dt>
-    <dd ng-repeat-end ng-controller="CommandController">
-      <input ng-disabled="noExpand" type="checkbox" ng-model="expandResultState">
-      {{command.description}}
-      <div ng-if="command.resultStateId && expandResultState" ng-include="'partials/state.html'">
-        
-      </div>
-    </dd>
-    <dt>
+    <dt></dt><dd><input type="button" ng-click="addCommand = true;" value="Add Command"></dd>
+    <dt ng-if="addCommand">
       <input type="hidden" ng-model="c.methodType">
       <input type="text" ng-model="c.method">
     </dt>
-    <dd>
-      <div xclass="inline-form">
+    <dd ng-if="addCommand">
+      <div class="inline-form">
         <div>
           <input type="text" ng-model="c.desc">
           <select ng-model="c.resultStateId">
@@ -32,6 +23,17 @@
         <input type="text" ng-disabled="c.resultStateId != ''" ng-model="c.stateName">
         <input type="text" ng-disabled="c.resultStateId != ''" ng-model="c.stateDesc">
         <input type="button" value="Create" ng-click="createCommand()">
+      </div>
+    </dd>
+    <dt ng-repeat-start="command in state.commands">
+      {{command.method}}
+    </dt>
+    <dd ng-repeat-end ng-controller="CommandController">
+      <input ng-disabled="stateInStack" type="checkbox" ng-model="expandResultState">
+      <a href="#" ng-click="addRootState(stateId)" title="Follow separately"><span class="glyphicon glyphicon-circle-arrow-down" aria-hidden="true"></span></a>
+      {{command.description}}
+      <div ng-if="command.resultStateId && expandResultState" ng-include="'partials/state.html'">
+        
       </div>
     </dd>
   </dl>
