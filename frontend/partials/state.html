@@ -4,34 +4,36 @@
     <input type="text" ng-model="state.description">
   </div>
 
-  <ul>
-    <li ng-repeat="command in state.commands">
-      <div ng-controller="CommandController">
-        <div class="inline-form">
-          <input ng-disabled="noExpand" type="checkbox" ng-model="expandResultState">
-          {{command.method}}
-          <input type="text" ng-model="command.description" class="state-desc">
-        </div>
-        <div ng-if="command.resultStateId && expandResultState" ng-include="'partials/state.html'">
-          
-        </div>
+  <!-- This controller up here is dumb. -->
+  <dl class="dl-horizontal" ng-controller="AddCommandController">
+    <dt ng-repeat-start="command in state.commands">
+      {{command.method}}
+    </dt>
+    <dd ng-repeat-end ng-controller="CommandController">
+      <input ng-disabled="noExpand" type="checkbox" ng-model="expandResultState">
+      {{command.description}}
+      <div ng-if="command.resultStateId && expandResultState" ng-include="'partials/state.html'">
+        
       </div>
-    </li>
-    <li>
-      <div ng-controller="AddCommandController" class="inline-form">
-        +
-        <input type="hidden" ng-model="c.methodType">
-        <input type="text" ng-model="c.method">
-        <input type="text" ng-model="c.desc">
-        +
-        <select ng-model="c.resultStateId">
-          <option value="">- New -</option>
-          <option ng-repeat="state in states" value="{{state.id}}">{{state.name}}</option>
-        </select>
+    </dd>
+    <dt>
+      <input type="hidden" ng-model="c.methodType">
+      <input type="text" ng-model="c.method">
+    </dt>
+    <dd>
+      <div xclass="inline-form">
+        <div>
+          <input type="text" ng-model="c.desc">
+          <select ng-model="c.resultStateId">
+            <option value="">- New -</option>
+            <option ng-repeat="state in states" value="{{state.id}}">{{state.name}}</option>
+          </select>
+        </div>
         <input type="text" ng-disabled="c.resultStateId != ''" ng-model="c.stateName">
         <input type="text" ng-disabled="c.resultStateId != ''" ng-model="c.stateDesc">
         <input type="button" value="Create" ng-click="createCommand()">
       </div>
-    </li>
-  </ul>
+    </dd>
+  </dl>
 </div>
+ 

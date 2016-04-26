@@ -1,6 +1,6 @@
 var appGuide = angular.module('app-guide', []);
 
-appGuide.controller('FudgeController', ['$scope', function($scope){
+appGuide.controller('FudgeController', ['$scope', ($scope) => {
     console.log('Loading fudge.');
 
     $scope.stateId = 1;
@@ -8,19 +8,17 @@ appGuide.controller('FudgeController', ['$scope', function($scope){
     $scope.appId = 1;
 }]);
 
-appGuide.controller('StateController', ['$scope', 'state', function($scope, state){
+appGuide.controller('StateController', ['$scope', 'state', ($scope, state) => {
     console.log('Loading state ' + $scope.stateId);
 
-    $scope.refreshState = function(){
-        state.getProcessState($scope.stateId, $scope.processId, function(s){
-            $scope.state = s;
-        });
-    }
+    $scope.refreshState = () => 
+        state.getProcessState($scope.stateId, $scope.processId, 
+                              (s) => $scope.state = s);
 
     $scope.refreshState();
 }]);
 
-appGuide.controller('CommandController', ['$scope', function($scope){
+appGuide.controller('CommandController', ['$scope', ($scope) => {
     // stateId will be needed by the next nested state/StateController if any.
     $scope.stateId = $scope.command.resultStateId;
     
@@ -30,8 +28,8 @@ appGuide.controller('CommandController', ['$scope', function($scope){
     $scope.expandResultState = false; // Very important to put this in THIS scope...
 }]);
 
-appGuide.controller('AddCommandController', ['$scope', 'state', function($scope, state){
-    $scope.clearCommand = function(){
+appGuide.controller('AddCommandController', ['$scope', 'state', ($scope, state) => {
+    $scope.clearCommand = () => {
         $scope.c = {
             methodType: 'keyboard-emacs',
             method: '',
@@ -43,12 +41,10 @@ appGuide.controller('AddCommandController', ['$scope', 'state', function($scope,
         };
     }
 
-    state.getStates($scope.appId, function(states){
-        $scope.states = states;
-    });
+    state.getStates($scope.appId, states => $scope.states = states);
 
-    $scope.createCommand = function(){
-        state.addCommand($scope.stateId, $scope.processId, $scope.c, function(){
+    $scope.createCommand = () => {
+        state.addCommand($scope.stateId, $scope.processId, $scope.c, () => {
             $scope.refreshState(); // Swiped from state
             $scope.clearCommand();
         });
@@ -57,32 +53,23 @@ appGuide.controller('AddCommandController', ['$scope', 'state', function($scope,
     $scope.clearCommand();
 }]);
 
-appGuide.factory('state', ['$http', function($http){
+appGuide.factory('state', ['$http', ($http) => {
     return {
-        getProcessState: function(stateId, processId, callback){
+        getProcessState(stateId, processId, callback){
             $http.get('/state/' + stateId + '/process/' + processId)
-                .then(function(response){
-                    callback(response.data);
-                }, function(response){
-                    console.log('Failed to fetch state ' + stateId + ' in process ' + processId);
-                });
+                .then(response => callback(response.data), 
+                      response => console.log('Failed to fetch state ' + stateId + ' in process ' + processId));
         },
-        addCommand: function(stateId, processId, command, callback){
+        addCommand(stateId, processId, command, callback){
             $http.post('/state/' + stateId + '/process/' + processId + '/command', 
                        command, {})
-                .then(function(response){
-                    callback();
-                }, function(reponse){
-                    console.log('Failed to post new command');
-                });
+                .then(response => callback(), 
+                      response => console.log('Failed to post new command'));
         },
-        getStates: function(appId, callback){
+        getStates(appId, callback){
             $http.get('/app/' + appId + '/state/')
-                .then(function(response){
-                    callback(response.data);
-                }, function(response){
-                    console.log('Failed to fetch state list for app ' + appId);
-                });
+                .then(response => callback(response.data), 
+                      response => console.log('Failed to fetch state list for app ' + appId));
         }};
 }]);
 
