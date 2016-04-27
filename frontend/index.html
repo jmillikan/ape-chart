@@ -19,8 +19,8 @@
       </div>
       
       <!-- Keyboard focus issues in here -->
-      <input ng-if="!addState" type="button" value="Add State/Include" ng-click="showAddState()">
-      <form ng-if="addState" class="inline-form">
+      <input ng-if="!addStateVisible" type="button" value="Add State/Include" ng-click="showAddState()">
+      <form ng-if="addStateVisible" class="inline-form">
         
         <input type="text" ng-model="newState.name" placeholder="Name, e.g. Edit Mode">
         

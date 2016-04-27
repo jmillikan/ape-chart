@@ -1,28 +1,27 @@
 <div ng-controller="StateController">
   <div class="inline-form">
-    {{state.name}} - {{state.description}}
+    {{state.name}} - {{state.description}}<em ng-if="state.description == ''">Description needed</em>
   </div>
 
   <!-- This controller up here is dumb, but there's not "one element" for it below. -->
   <!-- Probably end up with vastly different markup anyhow. -->
   <dl class="dl-horizontal" ng-controller="AddCommandController">
-    <dt></dt><dd><input type="button" ng-click="addCommand = true;" value="Add Command"></dd>
-    <dt ng-if="addCommand">
+    <dt></dt><dd><input type="button"value="Add Command" ng-if="!addCommandVisible" ng-click="showAddCommand()"></dd>
+    <dt ng-if="addCommandVisible">
       <input type="hidden" ng-model="c.methodType">
       <input type="text" ng-model="c.method">
     </dt>
-    <dd ng-if="addCommand">
+    <dd ng-if="addCommandVisible">
       <div class="inline-form">
-        <div>
-          <input type="text" ng-model="c.desc">
-          <select ng-model="c.resultStateId">
-            <option value="">- New -</option>
-            <option ng-repeat="state in states" value="{{state.id}}">{{state.name}}</option>
-          </select>
-        </div>
+        <input type="text" ng-model="c.desc">
+        <select ng-model="c.resultStateId">
+          <option value="">- New -</option>
+          <option ng-repeat="state in states" value="{{state.id}}">{{state.name}}</option>
+        </select>
         <input type="text" ng-disabled="c.resultStateId != ''" ng-model="c.stateName">
-        <input type="text" ng-disabled="c.resultStateId != ''" ng-model="c.stateDesc">
+        <!-- - <input type="text" ng-disabled="c.resultStateId != ''" ng-model="c.stateDesc">  -->
         <input type="button" value="Create" ng-click="createCommand()">
+        <input type="button" value="Cancel" ng-click="hideAddCommand()">
       </div>
     </dd>
     <dt ng-repeat-start="command in state.commands">

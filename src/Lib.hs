@@ -52,6 +52,8 @@ app pool = spockT id $ do
 
   middleware $ M.staticPolicy $ M.addBase "frontend"
 
+  get root $ file "text/html" "frontend/index.html"
+
   -- Some of these are shaped like REST endpoints but really aren't
   
   -- Endpoints CURRENTLY exercised by frontend

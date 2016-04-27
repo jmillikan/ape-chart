@@ -20,14 +20,14 @@ appGuide.controller('FudgeController', ['$scope', 'state', ($scope, state) => {
 
     // New state form
     $scope.newState = {name: '', description: ''};
-    $scope.addState = false;
-    $scope.showAddState = () => $scope.addState = true;
-    $scope.hideAddState = () => $scope.addState = false;
+    $scope.addStateVisible = false;
+    $scope.showAddState = () => $scope.addStateVisible = true;
+    $scope.hideAddState = () => $scope.addStateVisible = false;
     $scope.addState = () => {
         // TODO: Failure callback
         state.addState($scope.appId, $scope.newState.name, $scope.newState.description, 
                        $scope.addRootState);
-        $scope.addState = false;
+        $scope.addStateVisible = false;
     };
 
     $scope.processId = 1;
@@ -89,9 +89,14 @@ appGuide.controller('AddCommandController', ['$scope', 'state', ($scope, state) 
         state.addCommand($scope.stateId, $scope.processId, $scope.c, () => {
             $scope.refreshState(); // Swiped from state
             $scope.clearCommand();
+            $scope.hideAddCommand();
         });
 
     $scope.clearCommand();
+
+    $scope.addCommandVisible = false;
+    $scope.showAddCommand = () => $scope.addCommandVisible = true;
+    $scope.hideAddCommand = () => $scope.addCommandVisible = false;
 }]);
 
 appGuide.factory('state', ['$http', ($http) => {
