@@ -1,6 +1,9 @@
 var appGuide = angular.module('app-guide', []);
 
-appGuide.controller('FudgeController', ['$scope', ($scope) => {
+<!-- Relationship of $scope with controllers through here is lumpy. -->
+<!-- Thankfully everything used is either immediate (UI states), from 1 level up (stateId), or in fudge scope (addRootState etc). -->
+
+appGuide.controller('FudgeController', ['$scope', 'state', ($scope, state) => {
     console.log('Loading fudge.');
 
     $scope.appStateRootIds = [1];
@@ -13,6 +16,18 @@ appGuide.controller('FudgeController', ['$scope', ($scope) => {
             // TODO: Highlight state?
             console.log("Attempt to add duplicate top-level state (Not supported).");
         }
+    };
+
+    // New state form
+    $scope.newState = {name: '', description: ''};
+    $scope.addState = false;
+    $scope.showAddState = () => $scope.addState = true;
+    $scope.hideAddState = () => $scope.addState = false;
+    $scope.addState = () => {
+        // TODO: Failure callback
+        state.addState($scope.appId, $scope.newState.name, $scope.newState.description, 
+                       $scope.addRootState);
+        $scope.addState = false;
     };
 
     $scope.processId = 1;
@@ -81,6 +96,11 @@ appGuide.controller('AddCommandController', ['$scope', 'state', ($scope, state) 
 
 appGuide.factory('state', ['$http', ($http) => {
     return {
+        addState(appId, name, description, callback){
+            $http.post('/state', {name: name, description: description, appId: appId}, {})
+                .then(response => callback(response.data),
+                      response => console.log('Failed to add state'));
+        },
         getProcessState(stateId, processId, callback){
             $http.get('/state/' + stateId + '/process/' + processId)
                 .then(response => callback(response.data), 

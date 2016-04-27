@@ -11,6 +11,9 @@ App json
   name T.Text
   description T.Text
   deriving Show
+IncludeState json
+  stateId StateId
+  includedStateId StateId
 State json
   appId AppId
   name T.Text

@@ -17,6 +17,16 @@
            ng-controller="StateTreeController"
            ng-include="'/partials/state.html'">
       </div>
+      
+      <!-- Keyboard focus issues in here -->
+      <input ng-if="!addState" type="button" value="Add State/Include" ng-click="showAddState()">
+      <form ng-if="addState" class="inline-form">
+        
+        <input type="text" ng-model="newState.name" placeholder="Name, e.g. Edit Mode">
+        
+        <input type="button" value="Create" ng-click="addState()">
+        <input type="button" value="Cancel" ng-click="hideAddState()">
+      </form>
     </div>
     <script type="text/javascript" src="angular.min.js"></script>
     <script type="text/javascript" src="app.js"></script>
