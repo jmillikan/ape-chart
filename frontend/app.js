@@ -6,16 +6,18 @@ var appGuide = angular.module('app-guide', []);
 appGuide.controller('FudgeController', ['$scope', 'state', ($scope, state) => {
     console.log('Loading fudge.');
 
+    $scope.processId = 1;
+    $scope.appId = 1;
+
+    $scope.states = []; // $scope.states is also used creating commands.
+    state.getStates($scope.appId, (states) => $scope.states = states);
+
     $scope.appStateRootIds = [1];
     $scope.addRootState = (id) => {
+        id = Number(id);
         // Check explicitly, but this will error on dupes because of ngRepeat.
-        if(!$scope.appStateRootIds.includes(id)){
-            $scope.appStateRootIds.push(id);
-        }
-        else {
-            // TODO: Highlight state?
-            console.log("Attempt to add duplicate top-level state (Not supported).");
-        }
+        if(!$scope.appStateRootIds.includes(id)) $scope.appStateRootIds.push(id);
+        else console.log("Attempt to add duplicate top-level state (Not supported).");
     };
 
     // New state form
@@ -30,8 +32,11 @@ appGuide.controller('FudgeController', ['$scope', 'state', ($scope, state) => {
         $scope.addStateVisible = false;
     };
 
-    $scope.processId = 1;
-    $scope.appId = 1;
+    // Open state dropdown
+    $scope.stateIdToOpen = null;
+    $scope.openState = () => {
+        if($scope.stateIdToOpen != "") $scope.addRootState($scope.stateIdToOpen);
+    }
 }]);
 
 appGuide.controller('StateTreeController', ['$scope', ($scope) => {
@@ -47,6 +52,7 @@ appGuide.controller('StateController', ['$scope', 'state', ($scope, state) => {
     console.log('Loading state ' + $scope.stateId);
 
     $scope.state = null;
+
     $scope.refreshState = () => 
         state.getProcessState($scope.stateId, $scope.processId, 
                               (s) => $scope.state = s);
@@ -59,6 +65,8 @@ appGuide.controller('StateController', ['$scope', 'state', ($scope, state) => {
     // from opening the included state, the stateId of those commands is put on the stack.
     // This is done in CommandController, but could be done here by collecting
     // additional stateIds from scope.commands.
+
+    // This confusion calls for a rethinking of where I'm managing $scope.stateId.
 }]);
 
 appGuide.controller('CommandController', ['$scope', ($scope) => {
@@ -74,6 +82,7 @@ appGuide.controller('CommandController', ['$scope', ($scope) => {
     // Command may come from an "include state"
     // This is a hack to prevent the first ill side-effect, which is 
     //included commands opening when they probably shouldn't
+    // In the other case, this is just a dup of the last one on the stack.
     $scope.stateIdStack.push($scope.command.stateId); 
 
     // THEN we check for result state...
@@ -98,13 +107,10 @@ appGuide.controller('AddCommandController', ['$scope', 'state', ($scope, state) 
             stateName: '',
             stateDesc: ''
         };
-
-    state.getStates($scope.appId, (states) => $scope.states = states);
-
+    
     $scope.createCommand = () =>
         state.addCommand($scope.stateId, $scope.processId, $scope.c, () => {
             $scope.refreshState(); // Swiped from state
-            $scope.clearCommand();
             $scope.hideAddCommand();
         });
 

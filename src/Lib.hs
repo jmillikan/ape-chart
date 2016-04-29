@@ -84,7 +84,7 @@ app pool = spockT id $ do
       return commandId
     json $ fromSqlKey commandId
 
-  -- New included state...
+  -- New included state... (Not yet used)
   post ("state" <//> var <//> "include_state" <//> var) $ \stateId includeId -> do
     i <- withDb $ insertUnique $ IncludeState (toSqlKey stateId) (toSqlKey includeId)
     json (stateId, includeId)

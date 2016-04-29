@@ -13,11 +13,6 @@
     <div class="container-fluid">
     <h1>App Guide</h1>
     <div ng-controller="FudgeController">
-      <div ng-repeat="rootStateId in appStateRootIds"
-           ng-controller="StateTreeController"
-           ng-include="'/partials/state.html'">
-      </div>
-      
       <!-- Keyboard focus issues in here -->
       <input ng-if="!addStateVisible" type="button" value="Create State" ng-click="showAddState()">
       <form ng-if="addStateVisible" class="inline-form">
@@ -27,6 +22,17 @@
         <input type="button" value="Create" ng-click="addState()">
         <input type="button" value="Cancel" ng-click="hideAddState()">
       </form>
+      <div>
+        <select ng-model="stateIdToOpen" ng-change="openState()">
+          <option value="">- Select -</option>
+          <option ng-repeat="state in states" value="{{state.id}}">{{state.name}}</option>
+        </select>
+      </div>
+      <div ng-repeat="rootStateId in appStateRootIds"
+           ng-controller="StateTreeController"
+           ng-include="'/partials/state.html'">
+      </div>
+      
     </div>
     <script type="text/javascript" src="angular.min.js"></script>
     <script type="text/javascript" src="app.js"></script>
