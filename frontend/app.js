@@ -54,20 +54,36 @@ appGuide.controller('StateController', ['$scope', 'state', ($scope, state) => {
     $scope.refreshState();
     
     $scope.addCommand = false;
+
+    // To prevent "included commands" with a different stateId
+    // from opening the included state, the stateId of those commands is put on the stack.
+    // This is done in CommandController, but could be done here by collecting
+    // additional stateIds from scope.commands.
 }]);
 
 appGuide.controller('CommandController', ['$scope', ($scope) => {
     console.log('Loading command ' + $scope.command.id);
 
+    // Name for clarity.
+    var resultState = $scope.command.resultStateId; 
     // stateId will be needed by the next nested state/StateController if any.
-    $scope.stateId = $scope.command.resultStateId;
-
-    // does the state stack contain the state this command points to?
-    $scope.stateInStack = $scope.stateIdStack.includes($scope.stateId);
+    $scope.stateId = resultState;
 
     $scope.stateIdStack = $scope.stateIdStack.slice();
-    $scope.stateIdStack.push($scope.stateId);
+
+    // Command may come from an "include state"
+    // This is a hack to prevent the first ill side-effect, which is 
+    //included commands opening when they probably shouldn't
+    $scope.stateIdStack.push($scope.command.stateId); 
+
+    // THEN we check for result state...
+    // does the state stack contain the state this command points to?
+    $scope.stateInStack = $scope.stateIdStack.includes(resultState);
+
+    // THEN push the result state
+    $scope.stateIdStack.push(resultState);
     
+    // UI toggle
     $scope.expandResultState = false;
 }]);
 

@@ -14,6 +14,7 @@ App json
 IncludeState json
   stateId StateId
   includedStateId StateId
+  UniqueIncludeState stateId includedStateId
 State json
   appId AppId
   name T.Text

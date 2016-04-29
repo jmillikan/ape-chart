@@ -55,8 +55,6 @@ app pool = spockT id $ do
   get root $ file "text/html" "frontend/index.html"
 
   -- Some of these are shaped like REST endpoints but really aren't
-  
-  -- Endpoints CURRENTLY exercised by frontend
   get ("state" <//> var <//> "process" <//> var) $ \stateId processId -> do
     state <- withDb $ getProcessState (toSqlKey stateId) (toSqlKey processId)
     maybe (setStatus notFound404) json state 
@@ -85,6 +83,11 @@ app pool = spockT id $ do
       _ <- P.insert $ CommandProcess (toSqlKey processId) commandId note
       return commandId
     json $ fromSqlKey commandId
+
+  -- New included state...
+  post ("state" <//> var <//> "include_state" <//> var) $ \stateId includeId -> do
+    i <- withDb $ insertUnique $ IncludeState (toSqlKey stateId) (toSqlKey includeId)
+    json (stateId, includeId)
 
   -- Some blanket add & fetch endpoints
   -- For testing porpoises >_<
@@ -162,4 +165,10 @@ getProcessState stateId processId = do
         on (just (c ^. CommandId) ==. cp ?. CommandProcessCommandId &&. cp ?. CommandProcessProcessId ==. just (val processId))
         where_ (c ^. CommandStateId ==. val stateId)
         return (c, cp)
-      return $ Just $ StateForProcess (state, procCommands)
+      -- If this works, I'm never touching it again.
+      includedCommands <- E.select $ from $ \(is `InnerJoin` c `LeftOuterJoin` cp) -> do
+        on (just (c ^. CommandId) ==. cp ?. CommandProcessCommandId &&. cp ?. CommandProcessProcessId ==. just (val processId))
+        on (c ^. CommandStateId ==. is ^. IncludeStateIncludedStateId)
+        where_ (is ^. IncludeStateStateId ==. val stateId)
+        return (c, cp)
+      return $ Just $ StateForProcess (state, procCommands ++ includedCommands)

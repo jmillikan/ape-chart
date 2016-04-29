@@ -4,8 +4,8 @@
 
   <link rel="stylesheet" href="bootstrap/css/bootstrap.min.css">
   <style type="text/css">
-   .dl-horizontal dt { width: 80px; }
-   .dl-horizontal dd { margin-left: 100px; }
+   .dl-horizontal dt { width: 130px; }
+   .dl-horizontal dd { margin-left: 140px; }
   </style>
 
   </head>
@@ -19,7 +19,7 @@
       </div>
       
       <!-- Keyboard focus issues in here -->
-      <input ng-if="!addStateVisible" type="button" value="Add State/Include" ng-click="showAddState()">
+      <input ng-if="!addStateVisible" type="button" value="Create State" ng-click="showAddState()">
       <form ng-if="addStateVisible" class="inline-form">
         
         <input type="text" ng-model="newState.name" placeholder="Name, e.g. Edit Mode">
