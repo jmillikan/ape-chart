@@ -40,8 +40,7 @@ CommandProcess json
   processId ProcessId
   commandId CommandId
   notes T.Text
-  -- Next process step?
-  UniqueCommandStep processId commandId
+  UniqueCommandProcess processId commandId
 -- StateProcess json
 --   processId ProcessId
 --   stateId StateId

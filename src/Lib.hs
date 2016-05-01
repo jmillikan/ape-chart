@@ -101,6 +101,9 @@ app pool = spockT id $ do
     json commandId
 
   -- Remove command from process
+  delete ("command" <//> var <//> "process" <//> var) $ \commandId processId -> do
+    cp <- withDb $ deleteBy $ UniqueCommandProcess (toSqlKey commandId) (toSqlKey processId)
+    json (commandId, processId)
 
   -- Some blanket add & fetch endpoints
   -- For testing porpoises >_<

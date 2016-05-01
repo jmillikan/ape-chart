@@ -114,7 +114,7 @@ appGuide.controller('CommandController', ['$scope', 'state', ($scope, state) => 
     $scope.expandResultState = false;
 
     $scope.removeCommand = () => {
-        alert('Remove not implemented ' + $scope.stateId + ' ' + $scope.command.id);
+        state.removeCommand($scope.command.id, $scope.processId, (r) => $scope.refreshState());
     };
 
     $scope.deleteCommand = () => {
@@ -184,6 +184,11 @@ appGuide.factory('state', ['$http', ($http) => {
             $http.delete('/command/' + commandId)
                 .then(response => callback(response.data),
                       response => console.log('Failed to delete command'));
+        },
+        removeCommand(commandId, processId, callback){
+            $http.delete('/command/' + commandId + '/process/' + processId)
+                .then(response => callback(response.data),
+                      response => console.log('Failed to remove command-process'));
         }
     };
 }]);
