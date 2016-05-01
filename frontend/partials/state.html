@@ -1,6 +1,16 @@
 <div ng-controller="StateController">
   <div class="inline-form">
     {{state.name}} - {{state.description}}<em ng-if="state.description == ''">Description needed</em>
+    <a ng-click="includes.removeState(inc.id)" class="btn btn-primary" ng-repeat="inc in state.includes">
+      {{inc.name}}
+      <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
+    </a>
+    <span>
+      <select ng-model="includes.stateId">
+        <option ng-repeat="state in states" value="{{state.id}}">{{state.name}}</option>
+      </select>
+      <input type="button" value="Include" ng-click="includes.addState()">
+    </span>
   </div>
 
   <!-- This controller up here is dumb, but there's not "one element" for it below. -->
@@ -37,4 +47,3 @@
     </dd>
   </dl>
 </div>
- 

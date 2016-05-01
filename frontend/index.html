@@ -14,13 +14,13 @@
     <h1>App Guide</h1>
     <div ng-controller="FudgeController">
       <!-- Keyboard focus issues in here -->
-      <input ng-if="!addStateVisible" type="button" value="Create State" ng-click="showAddState()">
-      <form ng-if="addStateVisible" class="inline-form">
+      <input ng-if="!newState.visible" type="button" value="Create State" ng-click="newState.show()">
+      <form ng-if="newState.visible" class="inline-form">
         
         <input type="text" ng-model="newState.name" placeholder="Name, e.g. Edit Mode">
         
-        <input type="button" value="Create" ng-click="addState()">
-        <input type="button" value="Cancel" ng-click="hideAddState()">
+        <input type="button" value="Create" ng-click="newState.add()">
+        <input type="button" value="Cancel" ng-click="newState.hide()">
       </form>
       <div>
         <select ng-model="stateIdToOpen" ng-change="openState()">
@@ -29,8 +29,9 @@
         </select>
       </div>
       <div ng-repeat="rootStateId in appStateRootIds"
-           ng-controller="StateTreeController"
-           ng-include="'/partials/state.html'">
+           ng-controller="StateTreeController">
+        <input type="button" value="Close" ng-click="removeRootState(rootStateId)">
+        <div ng-include="'/partials/state.html'"></div>
       </div>
       
     </div>

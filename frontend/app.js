@@ -14,28 +14,36 @@ appGuide.controller('FudgeController', ['$scope', 'state', ($scope, state) => {
 
     $scope.appStateRootIds = [1];
     $scope.addRootState = (id) => {
-        id = Number(id);
+        id = Number(id); // This is sloppy but works for now.
+
         // Check explicitly, but this will error on dupes because of ngRepeat.
         if(!$scope.appStateRootIds.includes(id)) $scope.appStateRootIds.push(id);
         else console.log("Attempt to add duplicate top-level state (Not supported).");
     };
+    $scope.removeRootState = (rid) => {
+        rid = Number(rid);
 
-    // New state form
-    $scope.newState = {name: '', description: ''};
-    $scope.addStateVisible = false;
-    $scope.showAddState = () => $scope.addStateVisible = true;
-    $scope.hideAddState = () => $scope.addStateVisible = false;
-    $scope.addState = () => {
-        // TODO: Failure callback
-        state.addState($scope.appId, $scope.newState.name, $scope.newState.description, 
-                       $scope.addRootState);
-        $scope.addStateVisible = false;
+        $scope.appStateRootIds = $scope.appStateRootIds.filter((id) => id != rid);
     };
+    
+    $scope.newState = {
+        name: '', description: '',
+        visible: false,
+        show: () => $scope.newState.visible = true,
+        hide: () => $scope.newState.visible = false,
+        add: () => {
+            // TODO: Failure callback
+            state.addState($scope.appId, $scope.newState.name, $scope.newState.description, 
+                           $scope.addRootState);
+            $scope.addStateVisible = false;
+        }
+    }
 
     // Open state dropdown
     $scope.stateIdToOpen = null;
     $scope.openState = () => {
         if($scope.stateIdToOpen != "") $scope.addRootState($scope.stateIdToOpen);
+        $scope.stateIdToOpen = ""; // reset select (corner UX cases)
     }
 }]);
 
@@ -60,6 +68,16 @@ appGuide.controller('StateController', ['$scope', 'state', ($scope, state) => {
     $scope.refreshState();
     
     $scope.addCommand = false;
+
+    $scope.includes = {
+        stateId: null,
+        addState: () => {
+            state.addIncludeState($scope.stateId, $scope.includes.stateId, () => $scope.refreshState());
+        },
+        removeState: (includeStateId) => {
+            state.removeIncludeState($scope.stateId, includeStateId, () => $scope.refreshState());
+        }
+    };
 
     // To prevent "included commands" with a different stateId
     // from opening the included state, the stateId of those commands is put on the stack.
@@ -143,7 +161,18 @@ appGuide.factory('state', ['$http', ($http) => {
             $http.get('/app/' + appId + '/state/')
                 .then(response => callback(response.data), 
                       response => console.log('Failed to fetch state list for app ' + appId));
-        }};
+        },
+        addIncludeState(stateId, includeStateId, callback){
+            $http.post('/state/' + stateId + '/include_state/' + includeStateId)
+                .then(response => callback(response.data),
+                      response => console.log('Failed to add include state'));
+        },
+        removeIncludeState(stateId, includeStateId, callback){
+            $http.delete('/state/' + stateId + '/include_state/' + includeStateId)
+                .then(response => callback(response.data),
+                      response => console.log('Failed to add include state'));
+        }
+    };
 }]);
 
 // https://stackoverflow.com/questions/11442632/how-can-i-post-data-as-form-data-instead-of-a-request-payload

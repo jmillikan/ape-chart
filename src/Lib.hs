@@ -18,7 +18,7 @@ import qualified Data.HashMap.Strict as HM (insert)
 import qualified Database.Persist as P (get, update, insert) 
 import qualified Database.Esqueleto as E (select)
 import Database.Persist ((=.))
-import Database.Esqueleto hiding (update, get, Value, (=.), select)
+import Database.Esqueleto hiding (update, get, Value, (=.), select, delete)
 import qualified Database.Persist.Sqlite as Sqlite
 import Web.Spock.Safe
 import qualified Network.Wai.Middleware.Static as M
@@ -26,10 +26,11 @@ import Network.HTTP.Types.Status
 
 import Db
 
-newtype StateForProcess = StateForProcess (Entity State, [(Entity Command, Maybe (Entity CommandProcess))])
+newtype StateForProcess = StateForProcess (Entity State, [Entity State], [(Entity Command, Maybe (Entity CommandProcess))])
 
 instance ToJSON StateForProcess where
-  toJSON (StateForProcess (state, cps)) = nest (toJSON state) "commands" jsonCps
+  toJSON (StateForProcess (state, includes, cps)) = 
+    nest (nest (toJSON state) "commands" jsonCps) "includes" (toJSON includes)
     where jsonCps = toJSON $ map (\(c,cp) -> nest (toJSON c) "process" (toJSON cp)) cps
 
 nest :: Value -> Text -> Value -> Value
@@ -69,8 +70,8 @@ app pool = spockT id $ do
     method <- param' "method"
     desc <- param' "desc"
     note <- param' "note"
-    -- Should be blank rather than missing.
-    -- Is dumb but I'm lazy.
+  
+    -- If result state ID is blank, create new state with name and desc.
     resultStateId <- param' "resultStateId"
     resultStateName <- param' "stateName"
     resultStateDesc <- param' "stateDesc"
@@ -85,8 +86,13 @@ app pool = spockT id $ do
     json $ fromSqlKey commandId
 
   -- New included state... (Not yet used)
+  -- TODO: Verify same app...
   post ("state" <//> var <//> "include_state" <//> var) $ \stateId includeId -> do
     i <- withDb $ insertUnique $ IncludeState (toSqlKey stateId) (toSqlKey includeId)
+    json (stateId, includeId)
+
+  delete ("state" <//> var <//> "include_state" <//> var) $ \stateId includeId -> do
+    i <- withDb $ deleteBy $ UniqueIncludeState (toSqlKey stateId) (toSqlKey includeId)
     json (stateId, includeId)
 
   -- Some blanket add & fetch endpoints
@@ -171,4 +177,8 @@ getProcessState stateId processId = do
         on (c ^. CommandStateId ==. is ^. IncludeStateIncludedStateId)
         where_ (is ^. IncludeStateStateId ==. val stateId)
         return (c, cp)
-      return $ Just $ StateForProcess (state, procCommands ++ includedCommands)
+      includedStates <- E.select $ from $ \(is `InnerJoin` s) -> do
+        on (is ^. IncludeStateIncludedStateId ==. s ^. StateId)
+        where_ (is ^. IncludeStateStateId ==. val stateId)
+        return s
+      return $ Just $ StateForProcess (state, includedStates, procCommands ++ includedCommands)
