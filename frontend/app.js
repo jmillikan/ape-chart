@@ -87,7 +87,7 @@ appGuide.controller('StateController', ['$scope', 'state', ($scope, state) => {
     // This confusion calls for a rethinking of where I'm managing $scope.stateId.
 }]);
 
-appGuide.controller('CommandController', ['$scope', ($scope) => {
+appGuide.controller('CommandController', ['$scope', 'state', ($scope, state) => {
     console.log('Loading command ' + $scope.command.id);
 
     // Name for clarity.
@@ -118,7 +118,7 @@ appGuide.controller('CommandController', ['$scope', ($scope) => {
     };
 
     $scope.deleteCommand = () => {
-        alert('Delete not implemented' + $scope.stateId + ' ' + $scope.command.id);
+        state.deleteCommand($scope.command.id, (r) => $scope.refreshState());
     };
 }]);
 
@@ -179,6 +179,11 @@ appGuide.factory('state', ['$http', ($http) => {
             $http.delete('/state/' + stateId + '/include_state/' + includeStateId)
                 .then(response => callback(response.data),
                       response => console.log('Failed to add include state'));
+        },
+        deleteCommand(commandId, callback){
+            $http.delete('/command/' + commandId)
+                .then(response => callback(response.data),
+                      response => console.log('Failed to delete command'));
         }
     };
 }]);

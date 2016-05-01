@@ -15,7 +15,7 @@ import Data.Maybe
 import qualified Data.HashMap.Strict as HM (insert)
 
 -- These four identifiers are the subject of collisions *and* confusion...
-import qualified Database.Persist as P (get, update, insert) 
+import qualified Database.Persist as P (get, update, insert, delete) 
 import qualified Database.Esqueleto as E (select)
 import Database.Persist ((=.))
 import Database.Esqueleto hiding (update, get, Value, (=.), select, delete)
@@ -85,7 +85,7 @@ app pool = spockT id $ do
       return commandId
     json $ fromSqlKey commandId
 
-  -- New included state... (Not yet used)
+  -- Add/delete "include state"
   -- TODO: Verify same app...
   post ("state" <//> var <//> "include_state" <//> var) $ \stateId includeId -> do
     i <- withDb $ insertUnique $ IncludeState (toSqlKey stateId) (toSqlKey includeId)
@@ -94,6 +94,13 @@ app pool = spockT id $ do
   delete ("state" <//> var <//> "include_state" <//> var) $ \stateId includeId -> do
     i <- withDb $ deleteBy $ UniqueIncludeState (toSqlKey stateId) (toSqlKey includeId)
     json (stateId, includeId)
+
+  -- Delete command
+  delete ("command" <//> var) $ \commandId -> do
+    c <- withDb $ P.delete (toSqlKey commandId :: Key Command)
+    json commandId
+
+  -- Remove command from process
 
   -- Some blanket add & fetch endpoints
   -- For testing porpoises >_<

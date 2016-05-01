@@ -1,7 +1,7 @@
 <div ng-controller="StateController">
   <div class="inline-form">
     {{state.name}} - {{state.description}}<em ng-if="state.description == ''">Description needed</em>
-    <a ng-repeat="inc in state.includes" ng-click="includes.removeState(inc.id)" class="btn btn-primary">
+    <a ng-repeat="inc in state.includes" ng-click="includes.removeState(inc.id)" class="btn btn-xs btn-warning">
       {{inc.name}}
       <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
     </a>
@@ -40,10 +40,10 @@
     <dd ng-repeat-end ng-controller="CommandController">
       <input ng-disabled="stateInStack" type="checkbox" ng-model="expandResultState">
       <a href="#" ng-click="addRootState(stateId)" title="Follow separately"><span class="glyphicon glyphicon-circle-arrow-down" aria-hidden="true"></span></a>
-      <a ng-click="deleteCommand()" title="Delete command" class="btn btn-danger">
+      <a ng-click="deleteCommand()" title="Delete command" class="btn btn-xs btn-danger">
         <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
       </a>
-      <a ng-click="removeCommand()" title="Remove command from process" class="btn btn-warning">
+      <a ng-click="removeCommand()" title="Remove command from process" class="btn btn-xs btn-warning">
         <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
       </a>
 
