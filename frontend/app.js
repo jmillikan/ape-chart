@@ -112,6 +112,14 @@ appGuide.controller('CommandController', ['$scope', ($scope) => {
     
     // UI toggle
     $scope.expandResultState = false;
+
+    $scope.removeCommand = () => {
+        alert('Remove not implemented ' + $scope.stateId + ' ' + $scope.command.id);
+    };
+
+    $scope.deleteCommand = () => {
+        alert('Delete not implemented' + $scope.stateId + ' ' + $scope.command.id);
+    };
 }]);
 
 appGuide.controller('AddCommandController', ['$scope', 'state', ($scope, state) => {
