@@ -30,7 +30,7 @@ Command json
   method T.Text
   description T.Text
   resultStateId StateId Maybe
-  deriving Show
+  deriving Eq Show
 Process json
   appId AppId -- Possible for DB to contain commands linked to process for wrong app.
   name T.Text

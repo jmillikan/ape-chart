@@ -34,9 +34,9 @@
         <input type="button" value="Cancel" ng-click="hideAddCommand()">
       </div>
     </dd>
-    <dt ng-repeat-start="command in state.commands">
+    <dt ng-repeat-start="command in (state.commands | forProcess:processId)">
       {{command.method}}
-      <span ng-if="!!command.process" class="glyphicon glyphicon-star" aria-hidden="true"></span>
+      <span ng-if="command | inProcess:processId" class="glyphicon glyphicon-star" aria-hidden="true"></span>
     </dt>
     <dd ng-repeat-end ng-controller="CommandController">
       <input ng-disabled="stateInStack" type="checkbox" ng-model="expandResultState">

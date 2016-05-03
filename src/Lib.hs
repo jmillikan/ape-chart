@@ -11,14 +11,16 @@ import Control.Monad.Logger
 import Data.Int (Int64)
 import Data.Aeson hiding (json)
 import Data.Text (Text, pack)
-import Data.Maybe
+import qualified Data.List as L
+import qualified Data.Function as F
+import qualified Data.Maybe as DM
 import qualified Data.HashMap.Strict as HM (insert)
 
 -- These four identifiers are the subject of collisions *and* confusion...
 import qualified Database.Persist as P (get, update, insert, delete) 
 import qualified Database.Esqueleto as E (select)
 import Database.Persist ((=.))
-import Database.Esqueleto hiding (update, get, Value, (=.), select, delete)
+import Database.Esqueleto hiding (update, get, Value, (=.), select, delete, groupBy)
 import qualified Database.Persist.Sqlite as Sqlite
 import Web.Spock.Safe
 import qualified Network.Wai.Middleware.Static as M
@@ -26,7 +28,7 @@ import Network.HTTP.Types.Status
 
 import Db
 
-newtype StateForProcess = StateForProcess (Entity State, [Entity State], [(Entity Command, Maybe (Entity CommandProcess))])
+newtype StateForProcess = StateForProcess (Entity State, [Entity State], [(Entity Command, [Entity CommandProcess])])
 
 instance ToJSON StateForProcess where
   toJSON (StateForProcess (state, includes, cps)) = 
@@ -171,6 +173,13 @@ app pool = spockT id $ do
           P.insert $ CommandProcess (toSqlKey processId) (toSqlKey commandId) note
           return ()
 
+(cpCommandId, cpProcessId) = (CommandProcessCommandId, CommandProcessProcessId)
+(isIncludedStateId, isStateId) = (IncludeStateIncludedStateId, IncludeStateStateId)
+
+collapseChildren :: Eq a => [(a,Maybe b)] -> [(a,[b])]
+collapseChildren joined = map extractParent $ L.groupBy (F.on (==) fst) joined
+    where extractParent all@((p,_):_) = (p, DM.catMaybes $ map snd all)
+
 getProcessState :: StateId -> ProcessId -> SqlPersistM (Maybe StateForProcess)
 getProcessState stateId processId = do
   s <- E.select $ from $ \state -> where_ (state ^. StateId ==. val stateId) >> return state
@@ -178,17 +187,17 @@ getProcessState stateId processId = do
     [] -> return Nothing
     [state] -> do
       procCommands <- E.select $ from $ \(c `LeftOuterJoin` cp) -> do
-        on (just (c ^. CommandId) ==. cp ?. CommandProcessCommandId &&. cp ?. CommandProcessProcessId ==. just (val processId))
-        where_ (c ^. CommandStateId ==. val stateId)
+        on $ just (c ^. CommandId) ==. cp ?. cpCommandId
+        where_ $ c ^. CommandStateId ==. val stateId
         return (c, cp)
       -- If this works, I'm never touching it again.
       includedCommands <- E.select $ from $ \(is `InnerJoin` c `LeftOuterJoin` cp) -> do
-        on (just (c ^. CommandId) ==. cp ?. CommandProcessCommandId &&. cp ?. CommandProcessProcessId ==. just (val processId))
-        on (c ^. CommandStateId ==. is ^. IncludeStateIncludedStateId)
-        where_ (is ^. IncludeStateStateId ==. val stateId)
+        on $ just (c ^. CommandId) ==. cp ?. cpCommandId &&. cp ?. cpProcessId ==. just (val processId)
+        on $ c ^. CommandStateId ==. is ^. isIncludedStateId
+        where_ $ is ^. isStateId ==. val stateId
         return (c, cp)
       includedStates <- E.select $ from $ \(is `InnerJoin` s) -> do
-        on (is ^. IncludeStateIncludedStateId ==. s ^. StateId)
-        where_ (is ^. IncludeStateStateId ==. val stateId)
+        on (is ^. isIncludedStateId ==. s ^. StateId)
+        where_ (is ^. isStateId ==. val stateId)
         return s
-      return $ Just $ StateForProcess (state, includedStates, procCommands ++ includedCommands)
+      return $ Just $ StateForProcess (state, includedStates, collapseChildren $ procCommands ++ includedCommands)

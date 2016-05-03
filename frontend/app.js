@@ -130,6 +130,7 @@ appGuide.controller('AddCommandController', ['$scope', 'state', ($scope, state) 
             desc: '',
             note: '',
             resultStateId: '',
+
             stateName: '',
             stateDesc: ''
         };
@@ -192,6 +193,26 @@ appGuide.factory('state', ['$http', ($http) => {
         }
     };
 }]);
+
+var inProcess = (c,pid) => c.process.some((p) => p.processId == pid);
+
+appGuide.filter('inProcess', () => inProcess);
+
+appGuide.filter('forProcess', () => (input, pid) => {
+    // input is e.g. [{ /* command */ id: '1', method: 'C-c', process: [{ /* command process */ processId: '1'}]}]
+    // Order by primary process
+
+    if(!input){
+        return input;
+    }
+
+    return input.slice().sort((a, b) => {
+        if(inProcess(a, pid) && inProcess(b, pid)) return 0;
+        if(inProcess(a, pid)) return -1;
+        if(inProcess(b, pid)) return 1;
+        return 0;
+    });
+});
 
 // https://stackoverflow.com/questions/11442632/how-can-i-post-data-as-form-data-instead-of-a-request-payload
 appGuide.config(['$httpProvider', function($httpProvider) {
