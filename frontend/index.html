@@ -3,22 +3,26 @@
   <head><title>App Guide</title>
 
   <link rel="stylesheet" href="bootstrap/css/bootstrap.min.css">
-  <style type="text/css">
-   .dl-horizontal dt { width: 130px; }
-   .dl-horizontal dd { margin-left: 140px; }
-  </style>
-
   </head>
   <body>
     <div class="container-fluid">
     <h1>App Guide</h1>
-    <div ng-controller="FudgeController">
+    <div ng-controller="AppFudgeController">
+    <div ng-controller="MultiTreeController">
       <form class="inline-form">
         <select ng-model="processId">
+          <option value="">Select process...</option>
           <option ng-repeat="process in processes" value="{{process.id}}">{{process.name}}</option>
         </select>
       </form>
-      <!-- Keyboard focus issues in here -->
+
+      <div>
+        <select ng-model="stateIdToOpen" ng-change="openState()">
+          <option value="">Open State...</option>
+          <option ng-repeat="state in states" value="{{state.id}}">{{state.name}}</option>
+        </select>
+      </div>
+
       <input ng-if="!newState.visible" type="button" value="Create State" ng-click="newState.show()">
       <form ng-if="newState.visible" class="inline-form">
         
@@ -27,18 +31,13 @@
         <input type="button" value="Create" ng-click="newState.add()">
         <input type="button" value="Cancel" ng-click="newState.hide()">
       </form>
-      <div>
-        <select ng-model="stateIdToOpen" ng-change="openState()">
-          <option value="">- Select -</option>
-          <option ng-repeat="state in states" value="{{state.id}}">{{state.name}}</option>
-        </select>
-      </div>
-      <div ng-repeat="rootStateId in appStateRootIds"
-           ng-controller="StateTreeController">
+
+      <div ng-repeat="rootStateId in appStateRootIds" ng-controller="StateTreeController">
         <input type="button" value="Close" ng-click="removeRootState(rootStateId)">
         <div ng-include="'/partials/state.html'"></div>
       </div>
       
+    </div>
     </div>
     <script type="text/javascript" src="angular.min.js"></script>
     <script type="text/javascript" src="app.js"></script>

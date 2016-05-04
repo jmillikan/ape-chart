@@ -41,17 +41,15 @@
     <dd ng-repeat-end ng-controller="CommandController">
       <input ng-disabled="stateInStack" type="checkbox" ng-model="expandResultState">
       <a href="#" ng-click="addRootState(stateId)" title="Follow separately"><span class="glyphicon glyphicon-circle-arrow-down" aria-hidden="true"></span></a>
-      <a ng-click="deleteCommand()" title="Delete command" class="btn btn-xs btn-danger">
+      <a href="#" ng-click="deleteCommand()" title="Delete command" class="btn btn-xs btn-danger">
         <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
       </a>
-      <a ng-click="removeCommand()" title="Remove command from process" class="btn btn-xs btn-warning">
+      <a href="#" ng-click="removeCommand()" title="Remove command from process" class="btn btn-xs btn-warning">
         <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
       </a>
 
       {{command.description}}
-      <div ng-if="command.resultStateId && expandResultState" ng-include="'partials/state.html'">
-        
-      </div>
+      <div ng-if="command.resultStateId && expandResultState" ng-include="'partials/state.html'"></div>
     </dd>
   </dl>
 </div>

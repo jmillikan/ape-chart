@@ -2,11 +2,9 @@ var appGuide = angular.module('app-guide', []);
 
 <!-- Relationship of $scope with controllers through here is lumpy. -->
 <!-- Thankfully everything used is either immediate (UI states), from 1 level up (stateId), or in fudge scope (addRootState etc). -->
+appGuide.controller('AppFudgeController', ['$scope', 'state', ($scope, state) => {
+    console.log('Loading app fudge');
 
-appGuide.controller('FudgeController', ['$scope', 'state', ($scope, state) => {
-    console.log('Loading fudge.');
-
-    $scope.processId = null;
     $scope.appId = 1;
 
     $scope.states = []; // $scope.states is also used creating commands.
@@ -15,6 +13,12 @@ appGuide.controller('FudgeController', ['$scope', 'state', ($scope, state) => {
     $scope.processes = [];
     state.getProcesses($scope.appId, (processes) => $scope.processes = processes);
 
+    $scope.processId = null;
+}]);
+
+appGuide.controller('MultiTreeController', ['$scope', 'state', ($scope, state) => {
+    console.log('Loading process selection/multi state tree');
+    
     $scope.appStateRootIds = [1];
     $scope.addRootState = (id) => {
         id = Number(id); // This is sloppy but works for now.
@@ -65,7 +69,7 @@ appGuide.controller('StateController', ['$scope', 'state', ($scope, state) => {
     $scope.state = null;
 
     $scope.refreshState = () => 
-        state.getProcessState($scope.stateId, (s) => $scope.state = s);
+        state.getStateDetails($scope.stateId, (s) => $scope.state = s);
 
     $scope.refreshState();
     
@@ -80,11 +84,6 @@ appGuide.controller('StateController', ['$scope', 'state', ($scope, state) => {
             state.removeIncludeState($scope.stateId, includeStateId, () => $scope.refreshState());
         }
     };
-
-    // This might be a hack around my mis-use of $scope.
-    $scope.$watch('processId', (o,n) => $scope.refreshState());
-    
-
 
     // To prevent "included commands" with a different stateId
     // from opening the included state, the stateId of those commands is put on the stack.
@@ -162,7 +161,7 @@ appGuide.factory('state', ['$http', ($http) => {
                 .then(response => callback(response.data),
                       response => console.log('Failed to add state'));
         },
-        getProcessState(stateId, callback){
+        getStateDetails(stateId, callback){
             $http.get('/state/' + stateId)
                 .then(response => callback(response.data), 
                       response => console.log('Failed to fetch state ' + stateId));

@@ -109,7 +109,7 @@ app pool = spockT id $ do
 
   get ("app" <//> var <//> "process") $ \appId -> do
     processes <- withDb $ E.select $ from $ \p -> do
-      where_ $ p ^. AppId ==. val appId
+      where_ $ p ^. ProcessAppId ==. val appId
       return p
     json processes
 
