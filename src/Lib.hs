@@ -58,8 +58,8 @@ app pool = spockT id $ do
   get root $ file "text/html" "frontend/index.html"
 
   -- Some of these are shaped like REST endpoints but really aren't
-  get ("state" <//> var <//> "process" <//> var) $ \stateId processId -> do
-    state <- withDb $ getProcessState (toSqlKey stateId) (toSqlKey processId)
+  get ("state" <//> var) $ \stateId -> do
+    state <- withDb $ getProcessState (toSqlKey stateId)
     maybe (setStatus notFound404) json state 
 
   get ("app" <//> var <//> "state") $ \appId -> do
@@ -106,6 +106,12 @@ app pool = spockT id $ do
   delete ("command" <//> var <//> "process" <//> var) $ \commandId processId -> do
     cp <- withDb $ deleteBy $ UniqueCommandProcess (toSqlKey commandId) (toSqlKey processId)
     json (commandId, processId)
+
+  get ("app" <//> var <//> "process") $ \appId -> do
+    processes <- withDb $ E.select $ from $ \p -> do
+      where_ $ p ^. AppId ==. val appId
+      return p
+    json processes
 
   -- Some blanket add & fetch endpoints
   -- For testing porpoises >_<
@@ -180,8 +186,8 @@ collapseChildren :: Eq a => [(a,Maybe b)] -> [(a,[b])]
 collapseChildren joined = map extractParent $ L.groupBy (F.on (==) fst) joined
     where extractParent all@((p,_):_) = (p, DM.catMaybes $ map snd all)
 
-getProcessState :: StateId -> ProcessId -> SqlPersistM (Maybe StateForProcess)
-getProcessState stateId processId = do
+getProcessState :: StateId -> SqlPersistM (Maybe StateForProcess)
+getProcessState stateId = do
   s <- E.select $ from $ \state -> where_ (state ^. StateId ==. val stateId) >> return state
   case s of 
     [] -> return Nothing
@@ -192,7 +198,7 @@ getProcessState stateId processId = do
         return (c, cp)
       -- If this works, I'm never touching it again.
       includedCommands <- E.select $ from $ \(is `InnerJoin` c `LeftOuterJoin` cp) -> do
-        on $ just (c ^. CommandId) ==. cp ?. cpCommandId &&. cp ?. cpProcessId ==. just (val processId)
+        on $ just (c ^. CommandId) ==. cp ?. cpCommandId
         on $ c ^. CommandStateId ==. is ^. isIncludedStateId
         where_ $ is ^. isStateId ==. val stateId
         return (c, cp)

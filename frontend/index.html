@@ -13,6 +13,11 @@
     <div class="container-fluid">
     <h1>App Guide</h1>
     <div ng-controller="FudgeController">
+      <form class="inline-form">
+        <select ng-model="processId">
+          <option ng-repeat="process in processes" value="{{process.id}}">{{process.name}}</option>
+        </select>
+      </form>
       <!-- Keyboard focus issues in here -->
       <input ng-if="!newState.visible" type="button" value="Create State" ng-click="newState.show()">
       <form ng-if="newState.visible" class="inline-form">

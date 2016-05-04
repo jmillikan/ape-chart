@@ -6,11 +6,14 @@ var appGuide = angular.module('app-guide', []);
 appGuide.controller('FudgeController', ['$scope', 'state', ($scope, state) => {
     console.log('Loading fudge.');
 
-    $scope.processId = 1;
+    $scope.processId = null;
     $scope.appId = 1;
 
     $scope.states = []; // $scope.states is also used creating commands.
     state.getStates($scope.appId, (states) => $scope.states = states);
+
+    $scope.processes = [];
+    state.getProcesses($scope.appId, (processes) => $scope.processes = processes);
 
     $scope.appStateRootIds = [1];
     $scope.addRootState = (id) => {
@@ -62,8 +65,7 @@ appGuide.controller('StateController', ['$scope', 'state', ($scope, state) => {
     $scope.state = null;
 
     $scope.refreshState = () => 
-        state.getProcessState($scope.stateId, $scope.processId, 
-                              (s) => $scope.state = s);
+        state.getProcessState($scope.stateId, (s) => $scope.state = s);
 
     $scope.refreshState();
     
@@ -78,6 +80,11 @@ appGuide.controller('StateController', ['$scope', 'state', ($scope, state) => {
             state.removeIncludeState($scope.stateId, includeStateId, () => $scope.refreshState());
         }
     };
+
+    // This might be a hack around my mis-use of $scope.
+    $scope.$watch('processId', (o,n) => $scope.refreshState());
+    
+
 
     // To prevent "included commands" with a different stateId
     // from opening the included state, the stateId of those commands is put on the stack.
@@ -155,10 +162,10 @@ appGuide.factory('state', ['$http', ($http) => {
                 .then(response => callback(response.data),
                       response => console.log('Failed to add state'));
         },
-        getProcessState(stateId, processId, callback){
-            $http.get('/state/' + stateId + '/process/' + processId)
+        getProcessState(stateId, callback){
+            $http.get('/state/' + stateId)
                 .then(response => callback(response.data), 
-                      response => console.log('Failed to fetch state ' + stateId + ' in process ' + processId));
+                      response => console.log('Failed to fetch state ' + stateId));
         },
         addCommand(stateId, processId, command, callback){
             $http.post('/state/' + stateId + '/process/' + processId + '/command', 
@@ -190,6 +197,11 @@ appGuide.factory('state', ['$http', ($http) => {
             $http.delete('/command/' + commandId + '/process/' + processId)
                 .then(response => callback(response.data),
                       response => console.log('Failed to remove command-process'));
+        },
+        getProcesses(appId, callback){
+            $http.get('/app/' + appId + '/process')
+                .then(response => callback(response.data),
+                      response => console.log('Failed to fetch processes for app ' + appId));
         }
     };
 }]);
