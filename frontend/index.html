@@ -33,7 +33,6 @@
       </form>
 
       <div ng-repeat="rootStateId in appStateRootIds" ng-controller="StateTreeController">
-        <input type="button" value="Close" ng-click="removeRootState(rootStateId)">
         <div ng-include="'/partials/state.html'"></div>
       </div>
       
@@ -41,5 +40,7 @@
     </div>
     <script type="text/javascript" src="angular.min.js"></script>
     <script type="text/javascript" src="app.js"></script>
+    <script type="text/javascript" src="jquery-1.12.3.min.js"></script>
+    <script type="text/javascript" src="bootstrap/js/bootstrap.min.js"></script>
   </body>
 </html>

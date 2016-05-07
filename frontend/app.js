@@ -1,7 +1,9 @@
 var appGuide = angular.module('app-guide', []);
 
-<!-- Relationship of $scope with controllers through here is lumpy. -->
-<!-- Thankfully everything used is either immediate (UI states), from 1 level up (stateId), or in fudge scope (addRootState etc). -->
+/* 
+Relationship of $scope with controllers through here is lumpy.
+Thankfully everything used is either immediate (UI states), from 1 level up (stateId), or in fudge scope (addRootState etc).
+*/
 appGuide.controller('AppFudgeController', ['$scope', 'state', ($scope, state) => {
     console.log('Loading app fudge');
 
@@ -19,9 +21,12 @@ appGuide.controller('AppFudgeController', ['$scope', 'state', ($scope, state) =>
 appGuide.controller('MultiTreeController', ['$scope', 'state', ($scope, state) => {
     console.log('Loading process selection/multi state tree');
     
-    $scope.appStateRootIds = [1];
+    $scope.appStateRootIds = [];
     $scope.addRootState = (id) => {
         id = Number(id); // This is sloppy but works for now.
+        
+        // Note: The filter at the end of state.html also tries to prevent this wrt the state id stack.
+        // Need to get explicit about handling the whole thing at some point.
 
         // Check explicitly, but this will error on dupes because of ngRepeat.
         if(!$scope.appStateRootIds.includes(id)) $scope.appStateRootIds.push(id);
@@ -75,6 +80,11 @@ appGuide.controller('StateController', ['$scope', 'state', ($scope, state) => {
     
     $scope.addCommand = false;
 
+    $scope.moveToRoot = () => {
+        $scope.addRootState($scope.stateId);
+        if($scope.toggleExpanded) $scope.toggleExpanded();
+    };
+
     $scope.includes = {
         stateId: null,
         addState: () => {
@@ -117,7 +127,11 @@ appGuide.controller('CommandController', ['$scope', 'state', ($scope, state) => 
     $scope.stateIdStack.push(resultState);
     
     // UI toggle
-    $scope.expandResultState = false;
+    $scope.resultStateExpanded = false;
+
+    $scope.toggleExpanded = () => $scope.resultStateExpanded = !$scope.resultStateExpanded;
+    $scope.expandResultState = () => $scope.resultStateExpanded = true;
+    $scope.hideResultState = () => $scope.resultStateExpanded = false;
 
     $scope.removeCommand = () => {
         state.removeCommand($scope.command.id, $scope.processId, (r) => $scope.refreshState());

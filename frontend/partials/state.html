@@ -1,5 +1,9 @@
 <div ng-controller="StateController">
   <div class="inline-form">
+    <a href="#" ng-click="moveToRoot()"><span class="glyphicon glyphicon-open" aria-hidden="true"></span></a>
+    <a href="#" ng-click="removeRootState(rootStateId)"><span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
+    </a>
+
     {{state.name}} - {{state.description}}<em ng-if="state.description == ''">Description needed</em>
     <a ng-repeat="inc in state.includes" ng-click="includes.removeState(inc.id)" class="btn btn-xs btn-warning">
       {{inc.name}}
@@ -13,43 +17,38 @@
     </span>
   </div>
 
-  <!-- This controller up here is dumb, but there's not "one element" for it below. -->
-  <!-- Probably end up with vastly different markup anyhow. -->
-  <dl class="dl-horizontal" ng-controller="AddCommandController">
-    <dt></dt><dd><input type="button"value="Add Command" ng-if="!addCommandVisible" ng-click="showAddCommand()"></dd>
-    <dt ng-if="addCommandVisible">
-      <input type="hidden" ng-model="c.methodType">
-      <input type="text" ng-model="c.method">
-    </dt>
-    <dd ng-if="addCommandVisible">
-      <div class="inline-form">
-        <input type="text" ng-model="c.desc">
-        <select ng-model="c.resultStateId">
-          <option value="">- New -</option>
-          <option ng-repeat="state in states" value="{{state.id}}">{{state.name}}</option>
-        </select>
-        <input type="text" ng-disabled="c.resultStateId != ''" ng-model="c.stateName">
-        <!-- - <input type="text" ng-disabled="c.resultStateId != ''" ng-model="c.stateDesc">  -->
-        <input type="button" value="Create" ng-click="createCommand()">
-        <input type="button" value="Cancel" ng-click="hideAddCommand()">
-      </div>
-    </dd>
-    <dt ng-repeat-start="command in (state.commands | forProcess:processId)">
-      {{command.method}}
-      <span ng-if="command | inProcess:processId" class="glyphicon glyphicon-star" aria-hidden="true"></span>
-    </dt>
-    <dd ng-repeat-end ng-controller="CommandController">
-      <input ng-disabled="stateInStack" type="checkbox" ng-model="expandResultState">
-      <a href="#" ng-click="addRootState(stateId)" title="Follow separately"><span class="glyphicon glyphicon-circle-arrow-down" aria-hidden="true"></span></a>
-      <a href="#" ng-click="deleteCommand()" title="Delete command" class="btn btn-xs btn-danger">
-        <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
-      </a>
-      <a href="#" ng-click="removeCommand()" title="Remove command from process" class="btn btn-xs btn-warning">
-        <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
-      </a>
+  <div>
+    <input type="button"value="Add Command" ng-if="!addCommandVisible" ng-click="showAddCommand()">
+  </div>
+  <div ng-controller="AddCommandController" ng-if="addCommandVisible">
+    <input type="hidden" ng-model="c.methodType">
+    <input type="text" ng-model="c.method">
+    <div class="inline-form">
+      <input type="text" ng-model="c.desc">
+      <select ng-model="c.resultStateId">
+        <option value="">- New -</option>
+        <option ng-repeat="state in states" value="{{state.id}}">{{state.name}}</option>
+      </select>
+      <input type="text" ng-disabled="c.resultStateId != ''" ng-model="c.stateName">
+      <input type="button" value="Create" ng-click="createCommand()">
+      <input type="button" value="Cancel" ng-click="hideAddCommand()">
+    </div>
+  </div>
+  <div ng-repeat="command in state.commands | orderBy:'+method' | forProcess:processId" ng-controller="CommandController">
+    <div class="btn-group">
+      <button ng-click="toggleExpanded()" type="button" class="btn btn-xs btn-default {{ (command | inProcess:processId) ? 'btn-info' : '' }}">{{command.method}}</button>
+      <button type="button" class="btn btn-xs btn-default dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+        <span class="caret"></span>
+        <span class="sr-only">Toggle Dropdown</span>
+      </button>
+      <ul class="dropdown-menu">
+        <li><a ng-click="removeCommand()" href="#">Remove from process</a></li>
+        <li role="separator" class="divider"></li>
+        <li><a ng-click="removeCommand()" href="#">Delete Command</a></li>
+      </ul>
+    </div>
 
-      {{command.description}}
-      <div ng-if="command.resultStateId && expandResultState" ng-include="'partials/state.html'"></div>
-    </dd>
-  </dl>
+    {{command.description}}
+    <div style="margin-left: 20px" ng-if="!stateInStack && command.resultStateId && resultStateExpanded" ng-include="'partials/state.html'"></div>
+  </div>
 </div>

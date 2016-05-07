@@ -52,8 +52,10 @@ runApp dbFilename portNum = do
   
 app pool = spockT id $ do
   let withDb f = liftIO $ runSqlPersistMPool f pool
+  
+  c <- liftIO $ M.initCaching M.NoCaching
 
-  middleware $ M.staticPolicy $ M.addBase "frontend"
+  middleware $ M.staticPolicy' c $ M.addBase "frontend"
 
   get root $ file "text/html" "frontend/index.html"
 
