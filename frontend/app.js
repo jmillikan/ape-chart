@@ -50,13 +50,6 @@ appGuide.controller('MultiTreeController', ['$scope', 'state', ($scope, state) =
             $scope.addStateVisible = false;
         }
     }
-
-    // Open state dropdown
-    $scope.stateIdToOpen = null;
-    $scope.openState = () => {
-        if($scope.stateIdToOpen != "") $scope.addRootState($scope.stateIdToOpen);
-        $scope.stateIdToOpen = ""; // reset select (corner UX cases)
-    }
 }]);
 
 appGuide.controller('StateTreeController', ['$scope', ($scope) => {
@@ -164,7 +157,10 @@ appGuide.controller('AddCommandController', ['$scope', 'state', ($scope, state) 
     $scope.clearCommand();
 
     $scope.addCommandVisible = false;
-    $scope.showAddCommand = () => $scope.addCommandVisible = true;
+    $scope.showAddCommand = () => {
+        console.log('showAddCommand');
+        $scope.addCommandVisible = true;
+    }
     $scope.hideAddCommand = () => $scope.addCommandVisible = false;
 }]);
 

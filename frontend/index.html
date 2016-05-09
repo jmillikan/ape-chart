@@ -2,45 +2,48 @@
 <html ng-app="app-guide">
   <head><title>App Guide</title>
 
-  <link rel="stylesheet" href="bootstrap/css/bootstrap.min.css">
+    <link rel="stylesheet" href="bootstrap/css/bootstrap.min.css">
   </head>
   <body>
     <div class="container-fluid">
-    <h1>App Guide</h1>
-    <div ng-controller="AppFudgeController">
-    <div ng-controller="MultiTreeController">
-      <form class="inline-form">
-        <select ng-model="processId">
-          <option value="">Select process...</option>
-          <option ng-repeat="process in processes" value="{{process.id}}">{{process.name}}</option>
-        </select>
-      </form>
+      <h1>App Guide</h1>
+      <div ng-controller="AppFudgeController">
+        <div ng-controller="MultiTreeController">
+          <form class="inline-form">
+            <select style="max-width: 300px" class="form-control" ng-model="processId">
+              <option value="">No process selected</option>
+              <option ng-repeat="process in processes" value="{{process.id}}">{{process.name}}</option>
+            </select>
+          </form>
 
-      <div>
-        <select ng-model="stateIdToOpen" ng-change="openState()">
-          <option value="">Open State...</option>
-          <option ng-repeat="state in states" value="{{state.id}}">{{state.name}}</option>
-        </select>
+          <!-- Single button -->
+          <div class="btn-group">
+            <button type="button" class="btn btn-primary btn-sm dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+              View State <span class="caret"></span>
+            </button>
+            <ul class="dropdown-menu">
+              <li ng-repeat="state in states"><a ng-click="addRootState(state.id)" href="#">{{ state.name }}</a></li>
+            </ul>
+          </div>
+
+          <input ng-if="!newState.visible" type="button" value="Create State" ng-click="newState.show()">
+          <form ng-if="newState.visible" class="inline-form">
+            
+            <input type="text" ng-model="newState.name" placeholder="Name, e.g. Edit Mode">
+            
+            <input type="button" value="Create" ng-click="newState.add()">
+            <input type="button" value="Cancel" ng-click="newState.hide()">
+          </form>
+
+          <div ng-repeat="rootStateId in appStateRootIds" ng-controller="StateTreeController">
+            <div ng-include="'/partials/state.html'"></div>
+          </div>
+          
+        </div>
       </div>
-
-      <input ng-if="!newState.visible" type="button" value="Create State" ng-click="newState.show()">
-      <form ng-if="newState.visible" class="inline-form">
-        
-        <input type="text" ng-model="newState.name" placeholder="Name, e.g. Edit Mode">
-        
-        <input type="button" value="Create" ng-click="newState.add()">
-        <input type="button" value="Cancel" ng-click="newState.hide()">
-      </form>
-
-      <div ng-repeat="rootStateId in appStateRootIds" ng-controller="StateTreeController">
-        <div ng-include="'/partials/state.html'"></div>
-      </div>
-      
-    </div>
-    </div>
-    <script type="text/javascript" src="angular.min.js"></script>
-    <script type="text/javascript" src="app.js"></script>
-    <script type="text/javascript" src="jquery-1.12.3.min.js"></script>
-    <script type="text/javascript" src="bootstrap/js/bootstrap.min.js"></script>
+      <script type="text/javascript" src="angular.min.js"></script>
+      <script type="text/javascript" src="app.js"></script>
+      <script type="text/javascript" src="jquery-1.12.3.min.js"></script>
+      <script type="text/javascript" src="bootstrap/js/bootstrap.min.js"></script>
   </body>
 </html>

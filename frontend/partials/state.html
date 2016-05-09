@@ -17,13 +17,12 @@
     </span>
   </div>
 
-  <div>
-    <input type="button"value="Add Command" ng-if="!addCommandVisible" ng-click="showAddCommand()">
-  </div>
-  <div ng-controller="AddCommandController" ng-if="addCommandVisible">
-    <input type="hidden" ng-model="c.methodType">
-    <input type="text" ng-model="c.method">
-    <div class="inline-form">
+  <div ng-controller="AddCommandController">
+    <input class="btn btn-success btn-sm" type="button" value="Add Command" ng-if="!addCommandVisible" ng-click="showAddCommand()">
+
+    <div ng-if="addCommandVisible" class="inline-form">
+      <input type="hidden" ng-model="c.methodType">
+      <input type="text" ng-model="c.method">
       <input type="text" ng-model="c.desc">
       <select ng-model="c.resultStateId">
         <option value="">- New -</option>
@@ -34,6 +33,7 @@
       <input type="button" value="Cancel" ng-click="hideAddCommand()">
     </div>
   </div>
+
   <div ng-repeat="command in state.commands | orderBy:'+method' | forProcess:processId" ng-controller="CommandController">
     <div class="btn-group">
       <button ng-click="toggleExpanded()" type="button" class="btn btn-xs btn-default {{ (command | inProcess:processId) ? 'btn-info' : '' }}">{{command.method}}</button>
