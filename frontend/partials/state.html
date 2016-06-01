@@ -1,11 +1,11 @@
 <div ng-controller="StateController">
   <div class="inline-form">
-    <a href="#" ng-click="moveToRoot()"><span class="glyphicon glyphicon-open" aria-hidden="true"></span></a>
-    <a href="#" ng-click="removeRootState(rootStateId)"><span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
+    <a href="#" ng-if="stateId != rootStateId" ng-click="moveToRoot()"><span class="glyphicon glyphicon-open" aria-hidden="true"></span></a>
+    <a href="#" ng-if="stateId == rootStateId" ng-click="removeRootState(rootStateId)"><span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
     </a>
 
     {{state.name}} - {{state.description}}<em ng-if="state.description == ''">Description needed</em>
-    <a ng-repeat="inc in state.includes" ng-click="includes.removeState(inc.id)" class="btn btn-xs btn-warning">
+    <a href="#" ng-repeat="inc in state.includes" ng-click="includes.removeState(inc.id)" class="btn btn-xs btn-warning">
       {{inc.name}}
       <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
     </a>
@@ -18,7 +18,7 @@
   </div>
 
   <div ng-controller="AddCommandController">
-    <input class="btn btn-success btn-sm" type="button" value="Add Command" ng-if="!addCommandVisible" ng-click="showAddCommand()">
+    <input class="btn btn-success btn-xs" type="button" value="Add Command" ng-if="!addCommandVisible" ng-click="showAddCommand()">
 
     <div ng-if="addCommandVisible" class="inline-form">
       <input type="hidden" ng-model="c.methodType">
@@ -29,13 +29,14 @@
         <option ng-repeat="state in states" value="{{state.id}}">{{state.name}}</option>
       </select>
       <input type="text" ng-disabled="c.resultStateId != ''" ng-model="c.stateName">
-      <input type="button" value="Create" ng-click="createCommand()">
-      <input type="button" value="Cancel" ng-click="hideAddCommand()">
+      <input class="btn btn-success btn-xs" type="button" value="Create" ng-click="createCommand()">
+      <input class="btn btn-warning btn-xs" type="button" value="Cancel" ng-click="hideAddCommand()">
     </div>
   </div>
 
-  <div ng-repeat="command in state.commands | orderBy:'+method' | forProcess:processId" ng-controller="CommandController">
+  <div ng-repeat="command in state.commands | orderBy:'+method' | forProcess:processId:oop" ng-controller="CommandController">
     <div class="btn-group">
+      
       <button ng-click="toggleExpanded()" type="button" class="btn btn-xs btn-default {{ (command | inProcess:processId) ? 'btn-info' : '' }}">{{command.method}}</button>
       <button type="button" class="btn btn-xs btn-default dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
         <span class="caret"></span>

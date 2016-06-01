@@ -14,7 +14,6 @@ import Data.Text (Text, pack)
 import qualified Data.List as L
 import qualified Data.Function as F
 import qualified Data.Maybe as DM
-import qualified Data.HashMap.Strict as HM (insert)
 
 -- These four identifiers are the subject of collisions *and* confusion...
 import qualified Database.Persist as P (get, update, insert, delete) 
@@ -27,17 +26,6 @@ import qualified Network.Wai.Middleware.Static as M
 import Network.HTTP.Types.Status
 
 import Db
-
-newtype StateForProcess = StateForProcess (Entity State, [Entity State], [(Entity Command, [Entity CommandProcess])])
-
-instance ToJSON StateForProcess where
-  toJSON (StateForProcess (state, includes, cps)) = 
-    nest (nest (toJSON state) "commands" jsonCps) "includes" (toJSON includes)
-    where jsonCps = toJSON $ map (\(c,cp) -> nest (toJSON c) "process" (toJSON cp)) cps
-
-nest :: Value -> Text -> Value -> Value
-nest (Object outerMap) name inner = Object $ HM.insert name inner outerMap
-nest _ _ _ = error "Can only nest inside an object"
 
 -- P.get returns State, E.select returns Entity State.
 -- Trying not to intermix them for clarity

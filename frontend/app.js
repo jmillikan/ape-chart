@@ -16,6 +16,9 @@ appGuide.controller('AppFudgeController', ['$scope', 'state', ($scope, state) =>
     state.getProcesses($scope.appId, (processes) => $scope.processes = processes);
 
     $scope.processId = null;
+
+    // Show out-of-process
+    $scope.oop = false;
 }]);
 
 appGuide.controller('MultiTreeController', ['$scope', 'state', ($scope, state) => {
@@ -32,6 +35,7 @@ appGuide.controller('MultiTreeController', ['$scope', 'state', ($scope, state) =
         if(!$scope.appStateRootIds.includes(id)) $scope.appStateRootIds.push(id);
         else console.log("Attempt to add duplicate top-level state (Not supported).");
     };
+
     $scope.removeRootState = (rid) => {
         rid = Number(rid);
 
@@ -157,10 +161,7 @@ appGuide.controller('AddCommandController', ['$scope', 'state', ($scope, state) 
     $scope.clearCommand();
 
     $scope.addCommandVisible = false;
-    $scope.showAddCommand = () => {
-        console.log('showAddCommand');
-        $scope.addCommandVisible = true;
-    }
+    $scope.showAddCommand = () => $scope.addCommandVisible = true;
     $scope.hideAddCommand = () => $scope.addCommandVisible = false;
 }]);
 
@@ -219,7 +220,7 @@ var inProcess = (c,pid) => c.process.some((p) => p.processId == pid);
 
 appGuide.filter('inProcess', () => inProcess);
 
-appGuide.filter('forProcess', () => (input, pid) => {
+appGuide.filter('forProcess', () => (input, pid, outOfProcess) => {
     // input is e.g. [{ /* command */ id: '1', method: 'C-c', process: [{ /* command process */ processId: '1'}]}]
     // Order by primary process
 
@@ -227,7 +228,10 @@ appGuide.filter('forProcess', () => (input, pid) => {
         return input;
     }
 
-    return input.slice().sort((a, b) => {
+    console.log("outOfProcess: " + outOfProcess);
+    var commands = outOfProcess || !pid ? input : input.filter(c => inProcess(c, pid));
+
+    return commands.slice().sort((a, b) => {
         if(inProcess(a, pid) && inProcess(b, pid)) return 0;
         if(inProcess(a, pid)) return -1;
         if(inProcess(b, pid)) return 1;

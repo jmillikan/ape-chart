@@ -1,10 +1,14 @@
 {-# LANGUAGE TemplateHaskell, QuasiQuotes, TypeFamilies, MultiParamTypeClasses,
              EmptyDataDecls, FlexibleContexts, FlexibleInstances,
-             GADTs, GeneralizedNewtypeDeriving #-}
+             GADTs, GeneralizedNewtypeDeriving, OverloadedStrings #-}
 module Db where
 
+import qualified Data.HashMap.Strict as HM (insert)
+
 import Database.Persist.TH
+import Database.Persist
 import qualified Data.Text as T
+import Data.Aeson
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
 App json
@@ -47,4 +51,14 @@ CommandProcess json
 --   notes T.Text
 |]
 
+newtype StateForProcess = StateForProcess (Entity State, [Entity State], [(Entity Command, [Entity CommandProcess])])
+
+instance ToJSON StateForProcess where
+  toJSON (StateForProcess (state, includes, cps)) = 
+    nest (nest (toJSON state) "commands" jsonCps) "includes" (toJSON includes)
+    where jsonCps = toJSON $ map (\(c,cp) -> nest (toJSON c) "process" (toJSON cp)) cps
+
+nest :: Value -> T.Text -> Value -> Value
+nest (Object outerMap) name inner = Object $ HM.insert name inner outerMap
+nest _ _ _ = error "Can only nest inside an object"
 
