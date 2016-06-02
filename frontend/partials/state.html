@@ -1,7 +1,7 @@
 <div ng-controller="StateController">
   <div class="inline-form">
-    <a href="#" ng-if="stateId != rootStateId" ng-click="moveToRoot()"><span class="glyphicon glyphicon-open" aria-hidden="true"></span></a>
-    <a href="#" ng-if="stateId == rootStateId" ng-click="removeRootState(rootStateId)"><span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
+    <a ng-if="stateId != rootStateId" ng-click="moveToRoot()"><span class="glyphicon glyphicon-open" aria-hidden="true"></span></a>
+    <a ng-if="stateId == rootStateId" ng-click="removeRootState(rootStateId)"><span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
     </a>
 
     {{state.name}} - {{state.description}}<em ng-if="state.description == ''">Description needed</em>

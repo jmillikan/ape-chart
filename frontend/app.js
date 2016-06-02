@@ -1,8 +1,23 @@
-var appGuide = angular.module('app-guide', []);
+var appGuide = angular.module('app-guide', ['ngRoute']);
+
+appGuide.config(['$locationProvider', '$routeProvider', ($locationProvider, $routeProvider) => {
+    $locationProvider.hashPrefix('!');
+
+    $routeProvider.
+        when('/', { templateUrl: 'partials/app.html' });
+
+        // when('/phones', {
+        //     template: '<phone-list></phone-list>'
+        // }).
+        // when('/phones/:phoneId', {
+        //     template: '<phone-detail></phone-detail>'
+        // }).
+        // otherwise('/phones');
+}]);
 
 /* 
-Relationship of $scope with controllers through here is lumpy.
-Thankfully everything used is either immediate (UI states), from 1 level up (stateId), or in fudge scope (addRootState etc).
+   Relationship of $scope with controllers through here is lumpy.
+   Thankfully everything used is either immediate (UI states), from 1 level up (stateId), or in fudge scope (addRootState etc).
 */
 appGuide.controller('AppFudgeController', ['$scope', 'state', ($scope, state) => {
     console.log('Loading app fudge');
@@ -241,18 +256,18 @@ appGuide.filter('forProcess', () => (input, pid, outOfProcess) => {
 
 // https://stackoverflow.com/questions/11442632/how-can-i-post-data-as-form-data-instead-of-a-request-payload
 appGuide.config(['$httpProvider', function($httpProvider) {
-  // Intercept POST requests, convert to standard form encoding
-  $httpProvider.defaults.headers.post["Content-Type"] = "application/x-www-form-urlencoded";
-  $httpProvider.defaults.transformRequest.unshift(function (data, headersGetter) {
-    var key, result = [];
+    // Intercept POST requests, convert to standard form encoding
+    $httpProvider.defaults.headers.post["Content-Type"] = "application/x-www-form-urlencoded";
+    $httpProvider.defaults.transformRequest.unshift(function (data, headersGetter) {
+        var key, result = [];
 
-    if (typeof data === "string")
-      return data;
+        if (typeof data === "string")
+            return data;
 
-    for (key in data) {
-      if (data.hasOwnProperty(key))
-        result.push(encodeURIComponent(key) + "=" + encodeURIComponent(data[key]));
-    }
-    return result.join("&");
-  });
+        for (key in data) {
+            if (data.hasOwnProperty(key))
+                result.push(encodeURIComponent(key) + "=" + encodeURIComponent(data[key]));
+        }
+        return result.join("&");
+    });
 }]);
