@@ -1,0 +1,6 @@
+<h1>Apps</h1>
+<div ng-controller="ChooseAppController">
+<ul>
+  <li ng-repeat="app in apps"><a href="#!/{{ app.id }}">{{ app.name }}</a> - {{ app.description }}<i ng-if="!app.description">Description needed</i></li>
+</ul>
+</div>

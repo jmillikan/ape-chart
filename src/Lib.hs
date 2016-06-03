@@ -16,7 +16,7 @@ import qualified Data.Function as F
 import qualified Data.Maybe as DM
 
 -- These four identifiers are the subject of collisions *and* confusion...
-import qualified Database.Persist as P (get, update, insert, delete) 
+import qualified Database.Persist as P (get, update, insert, delete, selectList) 
 import qualified Database.Esqueleto as E (select)
 import Database.Persist ((=.))
 import Database.Esqueleto hiding (update, get, Value, (=.), select, delete, groupBy)
@@ -102,6 +102,10 @@ app pool = spockT id $ do
       where_ $ p ^. ProcessAppId ==. val appId
       return p
     json processes
+
+  get ("app") $ do
+    apps :: [Entity App] <- withDb $ P.selectList [] []
+    json apps
 
   -- Some blanket add & fetch endpoints
   -- For testing porpoises >_<

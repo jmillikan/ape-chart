@@ -3,16 +3,15 @@ var appGuide = angular.module('app-guide', ['ngRoute']);
 appGuide.config(['$locationProvider', '$routeProvider', ($locationProvider, $routeProvider) => {
     $locationProvider.hashPrefix('!');
 
-    $routeProvider.
-        when('/', { templateUrl: 'partials/app.html' });
+    $routeProvider
+        .when('/', { templateUrl: 'partials/front.html' })
+        .when('/:appId', { templateUrl: 'partials/app.html' });
+}]);
 
-        // when('/phones', {
-        //     template: '<phone-list></phone-list>'
-        // }).
-        // when('/phones/:phoneId', {
-        //     template: '<phone-detail></phone-detail>'
-        // }).
-        // otherwise('/phones');
+appGuide.controller('ChooseAppController', ['$scope', 'state', ($scope, state) => {
+    $scope.apps = [];
+
+    state.getApps((apps) => $scope.apps = apps);
 }]);
 
 /* 
@@ -202,6 +201,11 @@ appGuide.factory('state', ['$http', ($http) => {
             $http.get('/app/' + appId + '/state/')
                 .then(response => callback(response.data), 
                       response => console.log('Failed to fetch state list for app ' + appId));
+        },
+        getApps(callback){
+            $http.get('/app')
+                .then(response => callback(response.data),
+                      response => console.log('Failed to fetch app list'));
         },
         addIncludeState(stateId, includeStateId, callback){
             $http.post('/state/' + stateId + '/include_state/' + includeStateId)
