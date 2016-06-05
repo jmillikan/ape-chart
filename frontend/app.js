@@ -62,10 +62,9 @@ appGuide.controller('MultiTreeController', ['$scope', 'state', ($scope, state) =
         show: () => $scope.newState.visible = true,
         hide: () => $scope.newState.visible = false,
         add: () => {
-            // TODO: Failure callback
             state.addState($scope.appId, $scope.newState.name, $scope.newState.description, 
                            $scope.addRootState);
-            $scope.addStateVisible = false;
+            $scope.newState.visible = false;
         }
     }
 }]);
@@ -179,17 +178,53 @@ appGuide.controller('AddCommandController', ['$scope', 'state', ($scope, state) 
     $scope.hideAddCommand = () => $scope.addCommandVisible = false;
 }]);
 
-appGuide.factory('state', ['$http', ($http) => {
+appGuide.factory('state', ['$http', '$timeout', '$rootScope', ($http, $timeout, $rootScope) => {
+    $rootScope.networkTrouble = false;
+    // Very rough handling of this, just to provide something...
+
+    var initialDelay = 200; // ms
+    var troubleThreshold = 3200; // ms
+
+    var backoff = (p, success) => {
+        console.log('Backing off.');
+        var delay = initialDelay; // ms
+        
+        var c = () => {
+            p().then(r => {
+                $rootScope.networkTrouble = false;
+
+                return success(r);
+            }, ex => {
+                $timeout(c, delay); // timeout starts AFTER failure
+            });
+
+            if(delay >= troubleThreshold) 
+                $rootScope.networkTrouble = true;
+
+            delay = delay * 2;
+            console.log('Network delay: ' + delay);
+        }
+        
+        c();
+    };
+
     return {
+        getApps(callback){
+            backoff(() => $http.get('/app'),
+                    response => callback(response.data));
+        },
+        getProcesses(appId, callback){
+            backoff(() => $http.get('/app/' + appId + '/process'),
+                    response => callback(response.data));
+        },
         addState(appId, name, description, callback){
             $http.post('/state', {name: name, description: description, appId: appId}, {})
                 .then(response => callback(response.data),
-                      response => console.log('Failed to add state'));
+                      failure => console.log('Failure adding state ' + name));
         },
         getStateDetails(stateId, callback){
-            $http.get('/state/' + stateId)
-                .then(response => callback(response.data), 
-                      response => console.log('Failed to fetch state ' + stateId));
+            backoff(() => $http.get('/state/' + stateId), 
+                    response => callback(response.data));
         },
         addCommand(stateId, processId, command, callback){
             $http.post('/state/' + stateId + '/process/' + processId + '/command', 
@@ -198,14 +233,8 @@ appGuide.factory('state', ['$http', ($http) => {
                       response => console.log('Failed to post new command'));
         },
         getStates(appId, callback){
-            $http.get('/app/' + appId + '/state/')
-                .then(response => callback(response.data), 
-                      response => console.log('Failed to fetch state list for app ' + appId));
-        },
-        getApps(callback){
-            $http.get('/app')
-                .then(response => callback(response.data),
-                      response => console.log('Failed to fetch app list'));
+            backoff(() => $http.get('/app/' + appId + '/state/'),
+                    response => callback(response.data));
         },
         addIncludeState(stateId, includeStateId, callback){
             $http.post('/state/' + stateId + '/include_state/' + includeStateId)
@@ -226,11 +255,6 @@ appGuide.factory('state', ['$http', ($http) => {
             $http.delete('/command/' + commandId + '/process/' + processId)
                 .then(response => callback(response.data),
                       response => console.log('Failed to remove command-process'));
-        },
-        getProcesses(appId, callback){
-            $http.get('/app/' + appId + '/process')
-                .then(response => callback(response.data),
-                      response => console.log('Failed to fetch processes for app ' + appId));
         }
     };
 }]);
