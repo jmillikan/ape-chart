@@ -32,10 +32,22 @@ appGuide.controller('ChooseAppController', ['$scope', 'state', ($scope, state) =
    Relationship of $scope with controllers through here is lumpy.
    Thankfully everything used is either immediate (UI states), from 1 level up (stateId), or in fudge scope (addRootState etc).
 */
-appGuide.controller('AppFudgeController', ['$scope', 'state', '$routeParams', ($scope, state, $routeParams) => {
+appGuide.controller('AppFudgeController', ['$scope', 'state', '$routeParams', '$location', ($scope, state, $routeParams, $location) => {
     console.log('Loading app fudge');
 
-    $scope.appId = $routeParams.appId;
+    $scope.appId = Number($routeParams.appId);
+    $scope.app = null;
+    $scope.confirmDelete = () => {
+	if(confirm('Really delete entire app "' + ($scope.app.name || '(serious error: Missing app name)') + '"?')){
+	    state.deleteApp($scope.appId, () => null);
+
+	    $location.url('/');
+	}
+    };
+    
+    $scope.deleteApp = () => alert('Deleting app!!!!');
+
+    state.getApp($scope.appId, (app) => $scope.app = app);
 
     $scope.states = []; // $scope.states is also used creating commands.
     state.getStates($scope.appId, (states) => $scope.states = states);
@@ -228,8 +240,15 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', ($http, $timeout, 
             backoff(() => $http.get('/app'),
                     response => callback(response.data));
         },
+        getApp(appId, callback){
+            backoff(() => $http.get('/app/' + appId),
+                    response => callback(response.data));
+        },
+	deleteApp(appId, callback){
+	    $http.delete('/app/' + appId)
+		.then(response => callback(response.data));
+	},
         addApp(callback, name, description){
-            console.log(name);
             $http.post('/app', {name: name, description: description}, {})
                 .then(response => callback(response.data),
                       failure => console.log('Failure adding app ' + name + ': ' + failure));

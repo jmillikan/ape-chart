@@ -1,5 +1,15 @@
-<h1>App Guide</h1>
 <div ng-controller="AppFudgeController">
+  <div class="btn-group">
+    <button ng-click="showDetails()" class="btn btn-default">{{ app.name }}</button>
+    <button type="button" class="btn dropdown-toggle btn-default" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+      <span class="caret"></span>
+      <span class="sr-only">Toggle Dropdown</span>
+    </button>
+    <ul class="dropdown-menu">
+      <li><a ng-click="confirmDelete()">Delete App</a></li>
+    </ul>
+  </div>
+  <div ng-if="detailsVisibled"><span ng-if="app.description == ''"><i>Description needed</i></span>{{ app.description }}</div>
   <form class="form-inline">
     <div class="form-group">
       <select style="max-width: 300px" class="form-control" ng-model="processId">

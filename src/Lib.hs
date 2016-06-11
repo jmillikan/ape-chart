@@ -47,10 +47,22 @@ app pool = spockT id $ do
 
   get root $ file "text/html" "frontend/index.html"
 
+  get ("app") $ do
+    apps :: [Entity App] <- withDb $ P.selectList [] []
+    json apps
+  
+  get ("app" <//> var) $ \appId -> do
+    app <- withDb $ P.get (toSqlKey appId :: Key App)
+    json app
+
+  delete ("app" <//> var) $ \appId -> do
+    withDb $ P.delete (toSqlKey appId :: Key App)
+    json appId
+
   -- Some of these are shaped like REST endpoints but really aren't
   get ("state" <//> var) $ \stateId -> do
     state <- withDb $ getProcessState (toSqlKey stateId)
-    maybe (setStatus notFound404) json state 
+    maybe (setStatus notFound404) json state
 
   get ("app" <//> var <//> "state") $ \appId -> do
     states <- withDb $ P.selectList [StateAppId P.==. appId] []
@@ -108,10 +120,6 @@ app pool = spockT id $ do
       where_ $ p ^. ProcessAppId ==. val appId
       return p
     json processes
-
-  get ("app") $ do
-    apps :: [Entity App] <- withDb $ P.selectList [] []
-    json apps
 
   -- Some blanket add & fetch endpoints
   -- For testing porpoises >_<
