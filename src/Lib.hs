@@ -16,7 +16,7 @@ import qualified Data.Function as F
 import qualified Data.Maybe as DM
 
 -- These four identifiers are the subject of collisions *and* confusion...
-import qualified Database.Persist as P (get, update, insert, delete, selectList) 
+import qualified Database.Persist as P (get, update, insert, delete, selectList, (==.)) 
 import qualified Database.Esqueleto as E (select)
 import Database.Persist ((=.))
 import Database.Esqueleto hiding (update, get, Value, (=.), select, delete, groupBy)
@@ -53,8 +53,14 @@ app pool = spockT id $ do
     maybe (setStatus notFound404) json state 
 
   get ("app" <//> var <//> "state") $ \appId -> do
-    states <- withDb $ E.select $ from $ \s -> where_ (s ^. StateAppId ==. val appId) >> return s
+    states <- withDb $ P.selectList [StateAppId P.==. appId] []
     json states
+
+  post ("app") $ do
+    name <- param' "name"
+    desc <- param' "description"
+    newApp <- withDb $ P.insert $ App name desc
+    json newApp
 
   -- New command in a process, with optional result state
   post ("state" <//> var <//> "process" <//> var <//> "command") $ \stateId processId -> do

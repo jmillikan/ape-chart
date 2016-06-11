@@ -11,17 +11,31 @@ appGuide.config(['$locationProvider', '$routeProvider', ($locationProvider, $rou
 appGuide.controller('ChooseAppController', ['$scope', 'state', ($scope, state) => {
     $scope.apps = [];
 
-    state.getApps((apps) => $scope.apps = apps);
+    $scope.refreshApps = () => state.getApps((apps) => $scope.apps = apps);
+
+    $scope.newApp = {
+        visible: false,
+        show: () => { $scope.newApp.visible = true; },
+        hide: () => { $scope.newApp.visible = false; },
+        name: '',
+        description: '',
+        add: () => state.addApp(s => {
+            $scope.refreshApps();
+            $scope.newApp.hide();
+        }, $scope.newApp.name, $scope.newApp.description)
+    };
+
+    $scope.refreshApps();
 }]);
 
 /* 
    Relationship of $scope with controllers through here is lumpy.
    Thankfully everything used is either immediate (UI states), from 1 level up (stateId), or in fudge scope (addRootState etc).
 */
-appGuide.controller('AppFudgeController', ['$scope', 'state', ($scope, state) => {
+appGuide.controller('AppFudgeController', ['$scope', 'state', '$routeParams', ($scope, state, $routeParams) => {
     console.log('Loading app fudge');
 
-    $scope.appId = 1;
+    $scope.appId = $routeParams.appId;
 
     $scope.states = []; // $scope.states is also used creating commands.
     state.getStates($scope.appId, (states) => $scope.states = states);
@@ -185,10 +199,11 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', ($http, $timeout, 
     var initialDelay = 200; // ms
     var troubleThreshold = 3200; // ms
 
+    // exponential backoff on a thunk p presumed to return an $http promise calling success callback
     var backoff = (p, success) => {
-        console.log('Backing off.');
         var delay = initialDelay; // ms
-        
+
+        // Thunk - continue then increase delay
         var c = () => {
             p().then(r => {
                 $rootScope.networkTrouble = false;
@@ -202,9 +217,9 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', ($http, $timeout, 
                 $rootScope.networkTrouble = true;
 
             delay = delay * 2;
-            console.log('Network delay: ' + delay);
         }
-        
+
+        // Begin backoff with initialDelay
         c();
     };
 
@@ -212,6 +227,12 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', ($http, $timeout, 
         getApps(callback){
             backoff(() => $http.get('/app'),
                     response => callback(response.data));
+        },
+        addApp(callback, name, description){
+            console.log(name);
+            $http.post('/app', {name: name, description: description}, {})
+                .then(response => callback(response.data),
+                      failure => console.log('Failure adding app ' + name + ': ' + failure));
         },
         getProcesses(appId, callback){
             backoff(() => $http.get('/app/' + appId + '/process'),

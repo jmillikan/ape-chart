@@ -1,5 +1,11 @@
 <h1>Apps</h1>
 <div ng-controller="ChooseAppController">
+  <input ng-if="!newApp.visible" type="button" class="btn btn-sm btn-primary" ng-click="newApp.show()" value="Add App">
+  <form class="inline-form" ng-if="newApp.visible">
+    <input type="text" ng-model="newApp.name" placeholder="Name">
+    <input type="text" ng-model="newApp.description" placeholder="Description">
+    <input type="button" ng-click="newApp.add()" value="Create App">
+  </form>
 <ul>
   <li ng-repeat="app in apps"><a href="#!/{{ app.id }}">{{ app.name }}</a> - {{ app.description }}<i ng-if="!app.description">Description needed</i></li>
 </ul>
