@@ -267,7 +267,7 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', ($http, $timeout, 
                     response => callback(response.data));
         },
         addCommand(stateId, processId, command, callback){
-            $http.post('/state/' + stateId + '/process/' + processId + '/command', 
+            $http.post('/state/' + stateId + '/process/' + (processId ? processId : -1) + '/command', 
                        command, {})
                 .then(response => callback(), 
                       response => console.log('Failed to post new command'));
@@ -292,6 +292,7 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', ($http, $timeout, 
                       response => console.log('Failed to delete command'));
         },
         removeCommand(commandId, processId, callback){
+	    console.log('removing ' + commandId + ' from process ' + processId);
             $http.delete('/command/' + commandId + '/process/' + processId)
                 .then(response => callback(response.data),
                       response => console.log('Failed to remove command-process'));

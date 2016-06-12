@@ -5,7 +5,7 @@
     </a>
 
     {{state.name}} - {{state.description}}<em ng-if="state.description == ''">Description needed</em>
-    <a href="#" ng-repeat="inc in state.includes" ng-click="includes.removeState(inc.id)" class="btn btn-xs btn-warning">
+    <a ng-repeat="inc in state.includes" ng-click="includes.removeState(inc.id)" class="btn btn-xs btn-warning">
       {{inc.name}}
       <span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
     </a>
@@ -43,9 +43,9 @@
         <span class="sr-only">Toggle Dropdown</span>
       </button>
       <ul class="dropdown-menu">
-        <li><a ng-click="removeCommand()" href="#">Remove from process</a></li>
+        <li><a ng-click="removeCommand()">Remove from process</a></li>
         <li role="separator" class="divider"></li>
-        <li><a ng-click="removeCommand()" href="#">Delete Command</a></li>
+        <li><a ng-click="removeCommand()">Delete Command (Permanent)</a></li>
       </ul>
     </div>
 

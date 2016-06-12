@@ -7,6 +7,7 @@ module Lib
     ) where
 
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad (when, void)
 import Control.Monad.Logger
 import Data.Int (Int64)
 import Data.Aeson hiding (json)
@@ -80,8 +81,8 @@ app pool = spockT id $ do
     method <- param' "method"
     desc <- param' "desc"
     note <- param' "note"
-  
-    -- If result state ID is blank, create new state with name and desc.
+
+-- If result state ID is blank, create new state with name and desc.
     resultStateId <- param' "resultStateId"
     resultStateName <- param' "stateName"
     resultStateDesc <- param' "stateDesc"
@@ -90,9 +91,10 @@ app pool = spockT id $ do
       resultStateKey <- case resultStateId of
         "" -> P.insert $ State (stateAppId state) resultStateName resultStateDesc
         n -> return $ toSqlKey $ read $ resultStateId
-      commandId <- P.insert $ Command (toSqlKey stateId) methodType method desc (Just resultStateKey)
-      _ <- P.insert $ CommandProcess (toSqlKey processId) commandId note
-      return commandId
+      cid <- P.insert $ Command (toSqlKey stateId) methodType method desc (Just resultStateKey)
+      when (processId < 0) $ -- I hate sentinel values
+        void $ P.insert $ CommandProcess (toSqlKey processId) cid note
+      return cid
     json $ fromSqlKey commandId
 
   -- Add/delete "include state"
@@ -112,7 +114,7 @@ app pool = spockT id $ do
 
   -- Remove command from process
   delete ("command" <//> var <//> "process" <//> var) $ \commandId processId -> do
-    cp <- withDb $ deleteBy $ UniqueCommandProcess (toSqlKey commandId) (toSqlKey processId)
+    cp <- withDb $ deleteBy $ UniqueCommandProcess (toSqlKey processId) (toSqlKey commandId)
     json (commandId, processId)
 
   get ("app" <//> var <//> "process") $ \appId -> do
@@ -151,7 +153,7 @@ app pool = spockT id $ do
     (Just app) <- withDb $ P.get appKey
     processId <- withDb $ P.insert $ Process appKey name description
     json $ fromSqlKey processId
-  
+
   -- Update command...
   post ("command" <//> var) $ \commandIdRaw -> do
     methodType <- param' "methodType"
@@ -197,7 +199,7 @@ collapseChildren joined = map extractParent $ L.groupBy (F.on (==) fst) joined
 getProcessState :: StateId -> SqlPersistM (Maybe StateForProcess)
 getProcessState stateId = do
   s <- E.select $ from $ \state -> where_ (state ^. StateId ==. val stateId) >> return state
-  case s of 
+  case s of
     [] -> return Nothing
     [state] -> do
       procCommands <- E.select $ from $ \(c `LeftOuterJoin` cp) -> do
