@@ -34,7 +34,7 @@
     </div>
   </div>
 
-  <div ng-repeat="command in state.commands | orderBy:'+method' | forProcess:processId:oop" ng-controller="CommandController">
+  <div ng-repeat="command in state.commands | forProcess:processId:oop" ng-controller="CommandController">
     <div class="btn-group">
       
       <button ng-click="toggleExpanded()" type="button" class="btn btn-xs btn-default {{ (command | inProcess:processId) ? 'btn-info' : '' }}">{{command.method}}</button>

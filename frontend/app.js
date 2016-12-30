@@ -316,7 +316,7 @@ appGuide.filter('forProcess', () => (input, pid, outOfProcess) => {
     var commands = outOfProcess || !pid ? input : input.filter(c => inProcess(c, pid));
 
     return commands.slice().sort((a, b) => {
-        if(inProcess(a, pid) && inProcess(b, pid)) return 0;
+        if(inProcess(a, pid) && inProcess(b, pid)) return a.method.localeCompare(b.method);
         if(inProcess(a, pid)) return -1;
         if(inProcess(b, pid)) return 1;
         return 0;

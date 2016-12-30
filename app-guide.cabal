@@ -28,6 +28,8 @@ library
                      , esqueleto
                      , unordered-containers
                      , wai-middleware-static
+                     , resource-pool
+                     , wai
   default-language:    Haskell2010
 
 executable app-guide-exe

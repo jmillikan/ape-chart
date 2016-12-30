@@ -7,7 +7,8 @@ module Lib
     ) where
 
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (when, void)
+import Control.Monad.Trans.Class (lift)
+import Control.Monad (when, void, liftM)
 import Control.Monad.Logger
 import Data.Int (Int64)
 import Data.Aeson hiding (json)
@@ -26,6 +27,9 @@ import Web.Spock.Safe
 import qualified Network.Wai.Middleware.Static as M
 import Network.HTTP.Types.Status
 
+import Data.Pool (Pool)
+import Network.Wai (Middleware)
+
 import Db
 
 -- P.get returns State, E.select returns Entity State.
@@ -38,7 +42,8 @@ runApp dbFilename portNum = do
   -- Go back over setup stuff in... "The future"
   runNoLoggingT $ Sqlite.withSqlitePool (pack dbFilename) 10 $ \pool ->
     NoLoggingT $ runSpock portNum $ app pool
-  
+
+app :: Pool SqlBackend -> IO Network.Wai.Middleware
 app pool = spockT id $ do
   let withDb f = liftIO $ runSqlPersistMPool f pool
   
@@ -70,28 +75,28 @@ app pool = spockT id $ do
     json states
 
   post ("app") $ do
-    name <- param' "name"
-    desc <- param' "description"
-    newApp <- withDb $ P.insert $ App name desc
-    json newApp
+    app <- App <$> param' "name" <*> param' "description"
+    newApp <- withDb $ P.insert app
+    json (newApp :: Key App)
 
   -- New command in a process, with optional result state
   post ("state" <//> var <//> "process" <//> var <//> "command") $ \stateId processId -> do
-    methodType <- param' "methodType"
-    method <- param' "method"
-    desc <- param' "desc"
+    Just (_ :: State) <- withDb $ P.get $ toSqlKey $ stateId -- State exists?
+                             
     note <- param' "note"
 
--- If result state ID is blank, create new state with name and desc.
     resultStateId <- param' "resultStateId"
-    resultStateName <- param' "stateName"
-    resultStateDesc <- param' "stateDesc"
+    getResultState <- case resultStateId of
+      "" -> do
+        newState <- State (toSqlKey stateId) <$> param' "stateName" <*> param' "stateDesc" -- Is this lazy?
+        return $ P.insert newState 
+      n -> return $ return $ toSqlKey $ read $ resultStateId -- This is dumb
+           
+    command <- Command (toSqlKey stateId) <$> param' "methodType" <*> param' "method" <*> param' "desc" -- <*> stateId...
+           
     commandId <- withDb $ do -- Transaction???
-      (Just state) <- P.get $ toSqlKey $ stateId
-      resultStateKey <- case resultStateId of
-        "" -> P.insert $ State (stateAppId state) resultStateName resultStateDesc
-        n -> return $ toSqlKey $ read $ resultStateId
-      cid <- P.insert $ Command (toSqlKey stateId) methodType method desc (Just resultStateKey)
+      resultStateKey <- getResultState
+      cid <- P.insert $ command (Just resultStateKey)
       when (processId < 0) $ -- I hate sentinel values
         void $ P.insert $ CommandProcess (toSqlKey processId) cid note
       return cid
@@ -134,24 +139,20 @@ app pool = spockT id $ do
     maybe (setStatus notFound404) json command
 
   post ("state") $ do
-    appId <- param' "appId"
-    name <- param' "name"
-    description <- param' "description"
-    stateId <- withDb $ P.insert $ State appId name description
+    state <- State <$> param' "appId" <*> param' "name" <*> param' "description"
+    stateId <- withDb $ P.insert state
     json $ fromSqlKey stateId
 
   post ("app") $ do
-    name <- param' "name"
-    description <- param' "description"
-    appId <- withDb $ P.insert $ App name description
+    app <- App <$> param' "name" <*> param' "description"
+    appId <- withDb $ P.insert app
     json $ fromSqlKey appId
 
   post ("app" <//> var <//> "process") $ \appId -> do
     let appKey = toSqlKey appId
-    name <- param' "name"
-    description <- param' "description"
+    process <- Process appKey <$> param' "name" <*> param' "description"
     (Just app) <- withDb $ P.get appKey
-    processId <- withDb $ P.insert $ Process appKey name description
+    processId <- withDb $ P.insert process
     json $ fromSqlKey processId
 
   -- Update command...
