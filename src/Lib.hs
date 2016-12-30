@@ -81,14 +81,14 @@ app pool = spockT id $ do
 
   -- New command in a process, with optional result state
   post ("state" <//> var <//> "process" <//> var <//> "command") $ \stateId processId -> do
-    Just _ :: Maybe State <- withDb $ P.get $ toSqlKey $ stateId -- State exists?
+    Just s :: Maybe State <- withDb $ P.get $ toSqlKey $ stateId -- State exists?
                              
     note <- param' "note"
 
     resultStateId <- param' "resultStateId"
     getResultState <- case resultStateId of
       "" -> do
-        newState <- State (toSqlKey stateId) <$> param' "stateName" <*> param' "stateDesc" -- Is this lazy?
+        newState <- State (stateAppId s) <$> param' "stateName" <*> param' "stateDesc" -- Is this lazy?
         return $ P.insert newState 
       n -> return $ return $ toSqlKey $ read $ resultStateId -- This is dumb
            

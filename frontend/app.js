@@ -24,10 +24,10 @@ appGuide.controller('ChooseAppController', ['$scope', 'state', ($scope, state) =
         hide: () => { $scope.newApp.visible = false; },
         name: '', // Form, 2-way
         description: '', // Form, 2-way
-        add: () => state.addApp(s => {
+        add: () => state.addApp($scope.newApp.name, $scope.newApp.description).then(s => {
             $scope.refreshApps();
             $scope.newApp.hide();
-        }, $scope.newApp.name, $scope.newApp.description)
+        })
     };
 
     $scope.refreshApps();
@@ -51,7 +51,10 @@ appGuide.controller('AppFudgeController', ['$scope', 'state', '$routeParams', '$
     state.getApp($scope.appId).then(app => $scope.app = app);
 
     $scope.states = []; // $scope.states is also used creating commands.
-    state.getStates($scope.appId).then((states) => $scope.states = states);
+    
+    $scope.refreshAppStates = () =>
+	state.getStates($scope.appId).then((states) => $scope.states = states);
+    $scope.refreshAppStates();
 
     $scope.processes = [];
     state.getProcesses($scope.appId).then((processes) => $scope.processes = processes);
@@ -111,7 +114,7 @@ appGuide.controller('StateController', ['$scope', 'state', ($scope, state) => {
     $scope.state = null;
 
     $scope.refreshState = () => 
-        state.getStateDetails($scope.stateId, (s) => $scope.state = s);
+        state.getStateDetails($scope.stateId).then((s) => $scope.state = s);
 
     $scope.refreshState();
     
@@ -193,8 +196,9 @@ appGuide.controller('AddCommandController', ['$scope', 'state', ($scope, state) 
         };
     
     $scope.createCommand = () =>
-        state.addCommand($scope.stateId, $scope.processId, $scope.c, () => {
+        state.addCommand($scope.stateId, $scope.processId, $scope.c).then(c => {
             $scope.refreshState(); // Swiped from state
+	    $scope.refreshAppStates(); // Might have added a state
             $scope.hideAddCommand();
         });
 
@@ -211,34 +215,11 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', '$q', ($http, $tim
 
     var initialDelay = 200; // ms
     var troubleThreshold = 3200; // ms
+    var quitThreshold = 10000; // ms
 
-    // exponential backoff on a thunk p presumed to return an $http promise calling success callback
-    var backoff = (p, success) => {
-        var delay = initialDelay; // ms
-
-        // Thunk - continue then increase delay
-        var c = () => {
-            p().then(r => {
-                networkState.networkTrouble = false;
-
-                return success(r);
-            }, ex => {
-                $timeout(c, delay); // timeout starts AFTER failure
-            });
-
-            if(delay >= troubleThreshold) 
-                networkState.networkTrouble = true;
-
-            delay = delay * 2;
-        }
-
-        // Begin backoff with initialDelay
-        c();
-    };
-
-    // exponential backoff on a thunk p presumed to return an $http promise calling success callback
+    // Exponential backoff returning a new promise.
     var qBackoff = (p) => {
-	var newP = $q.defer(); // As t->f rewrite to get rid of $q.defer...
+	var newP = $q.defer(); // ATGTI rewrite to get rid of $q.defer...
 	
         var delay = initialDelay; // ms
 
@@ -249,13 +230,23 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', '$q', ($http, $tim
 
 		newP.resolve(r);
             }, ex => {
+		delay = delay * 2;
+
+		if(delay >= troubleThreshold) 
+                    networkState.networkTrouble = true;
+
+		if(delay >= quitThreshold){
+		    newP.reject("Gave up retrying network operation after " + quitThreshold / 1000 + "s");
+
+		    console.log("Rejected request due to threshold");
+
+		    return;
+		}
+
+		console.log("Delayed request due to failure");
+
                 $timeout(c, delay); // timeout starts AFTER failure
             });
-
-            if(delay >= troubleThreshold) 
-                networkState.networkTrouble = true;
-
-            delay = delay * 2;
         }
 
         // Begin backoff with initialDelay
@@ -268,58 +259,44 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', '$q', ($http, $tim
 
     return {
 	networkState: networkState,
-        getApps(callback){
-            return httpData(qBackoff(() => $http.get('/app')));
-        },
-        getApp(appId){
-            return httpData(qBackoff(() => $http.get('/app/' + appId)));
-        },
-	deleteApp(appId){
-	    return httpData($http.delete('/app/' + appId));
-	},
-        addApp(callback, name, description){
-            $http.post('/app', {name: name, description: description}, {})
-                .then(response => callback(response.data),
-                      failure => console.log('Failure adding app ' + name + ': ' + failure));
-        }, 
-        getStates(appId, callback){
-            return httpData(qBackoff(() => $http.get('/app/' + appId + '/state/')));
-        },
-        getProcesses(appId, callback){
-            return httpData(qBackoff(() => $http.get('/app/' + appId + '/process')));
-        },
-        addState(appId, name, description, callback){
+        getApps: (callback) =>
+	    httpData(qBackoff(() => $http.get('/app'))),
+        getApp: (appId) =>
+	    httpData(qBackoff(() => $http.get('/app/' + appId))),
+	deleteApp: (appId) =>
+	    httpData($http.delete('/app/' + appId)),
+        addApp: (name, description) =>
+	    httpData($http.post('/app', {name: name, description: description}, {})),
+        getStates: (appId, callback) =>
+            httpData(qBackoff(() => $http.get('/app/' + appId + '/state/'))),
+        getProcesses: (appId, callback) => 
+            httpData(qBackoff(() => $http.get('/app/' + appId + '/process'))),
+        addState: (appId, name, description, callback) => {
             $http.post('/state', {name: name, description: description, appId: appId}, {})
                 .then(response => callback(response.data),
                       failure => console.log('Failure adding state ' + name));
         },
-        getStateDetails(stateId, callback){
-            backoff(() => $http.get('/state/' + stateId), 
-                    response => callback(response.data));
-        },
-        addCommand(stateId, processId, command, callback){
-            $http.post('/state/' + stateId + '/process/' + (processId ? processId : -1) + '/command', 
-                       command, {})
-                .then(response => callback(), 
-                      response => console.log('Failed to post new command'));
-        },
-        addIncludeState(stateId, includeStateId, callback){
+        getStateDetails: (stateId, callback) =>
+	    httpData(qBackoff(() => $http.get('/state/' + stateId))),
+        addCommand: (stateId, processId, command) => 
+            httpData($http.post('/state/' + stateId + '/process/' + (processId ? processId : -1) + '/command', 
+				command, {})),
+        addIncludeState: (stateId, includeStateId, callback) => {
             $http.post('/state/' + stateId + '/include_state/' + includeStateId)
                 .then(response => callback(response.data),
                       response => console.log('Failed to add include state'));
         },
-        removeIncludeState(stateId, includeStateId, callback){
+        removeIncludeState: (stateId, includeStateId, callback) => {
             $http.delete('/state/' + stateId + '/include_state/' + includeStateId)
                 .then(response => callback(response.data),
                       response => console.log('Failed to add include state'));
         },
-        deleteCommand(commandId, callback){
+        deleteCommand: (commandId, callback) => {
             $http.delete('/command/' + commandId)
                 .then(response => callback(response.data),
                       response => console.log('Failed to delete command'));
         },
-        removeCommand(commandId, processId, callback){
-	    console.log('removing ' + commandId + ' from process ' + processId);
+        removeCommand: (commandId, processId, callback) => {
             $http.delete('/command/' + commandId + '/process/' + processId)
                 .then(response => callback(response.data),
                       response => console.log('Failed to remove command-process'));
