@@ -8,17 +8,22 @@ appGuide.config(['$locationProvider', '$routeProvider', ($locationProvider, $rou
         .when('/:appId', { templateUrl: 'partials/app.html' });
 }]);
 
+appGuide.controller('AppController', ['$rootScope', 'state', ($rootScope, state) => {
+    $rootScope.networkState = state.networkState;
+}]);
+
 appGuide.controller('ChooseAppController', ['$scope', 'state', ($scope, state) => {
     $scope.apps = [];
 
-    $scope.refreshApps = () => state.getApps((apps) => $scope.apps = apps);
+    $scope.refreshApps = () => state.getApps().then((apps) => $scope.apps = apps);
 
+    // Directive as t->inf
     $scope.newApp = {
         visible: false,
         show: () => { $scope.newApp.visible = true; },
         hide: () => { $scope.newApp.visible = false; },
-        name: '',
-        description: '',
+        name: '', // Form, 2-way
+        description: '', // Form, 2-way
         add: () => state.addApp(s => {
             $scope.refreshApps();
             $scope.newApp.hide();
@@ -39,21 +44,17 @@ appGuide.controller('AppFudgeController', ['$scope', 'state', '$routeParams', '$
     $scope.app = null;
     $scope.confirmDelete = () => {
 	if(confirm('Really delete entire app "' + ($scope.app.name || '(serious error: Missing app name)') + '"?')){
-	    state.deleteApp($scope.appId, () => null);
-
-	    $location.url('/');
+	    state.deleteApp($scope.appId).then(r => $location.url('/'));
 	}
     };
     
-    $scope.deleteApp = () => alert('Deleting app!!!!');
-
-    state.getApp($scope.appId, (app) => $scope.app = app);
+    state.getApp($scope.appId).then(app => $scope.app = app);
 
     $scope.states = []; // $scope.states is also used creating commands.
-    state.getStates($scope.appId, (states) => $scope.states = states);
+    state.getStates($scope.appId).then((states) => $scope.states = states);
 
     $scope.processes = [];
-    state.getProcesses($scope.appId, (processes) => $scope.processes = processes);
+    state.getProcesses($scope.appId).then((processes) => $scope.processes = processes);
 
     $scope.processId = null;
 
@@ -204,8 +205,8 @@ appGuide.controller('AddCommandController', ['$scope', 'state', ($scope, state) 
     $scope.hideAddCommand = () => $scope.addCommandVisible = false;
 }]);
 
-appGuide.factory('state', ['$http', '$timeout', '$rootScope', ($http, $timeout, $rootScope) => {
-    $rootScope.networkTrouble = false;
+appGuide.factory('state', ['$http', '$timeout', '$rootScope', '$q', ($http, $timeout, $rootScope, $q) => {
+    var networkState = {networkTrouble: false};
     // Very rough handling of this, just to provide something...
 
     var initialDelay = 200; // ms
@@ -218,7 +219,7 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', ($http, $timeout, 
         // Thunk - continue then increase delay
         var c = () => {
             p().then(r => {
-                $rootScope.networkTrouble = false;
+                networkState.networkTrouble = false;
 
                 return success(r);
             }, ex => {
@@ -226,7 +227,7 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', ($http, $timeout, 
             });
 
             if(delay >= troubleThreshold) 
-                $rootScope.networkTrouble = true;
+                networkState.networkTrouble = true;
 
             delay = delay * 2;
         }
@@ -235,27 +236,57 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', ($http, $timeout, 
         c();
     };
 
+    // exponential backoff on a thunk p presumed to return an $http promise calling success callback
+    var qBackoff = (p) => {
+	var newP = $q.defer(); // As t->f rewrite to get rid of $q.defer...
+	
+        var delay = initialDelay; // ms
+
+        // Thunk - continue then increase delay
+        var c = () => {
+            p().then(r => {
+                networkState.networkTrouble = false;
+
+		newP.resolve(r);
+            }, ex => {
+                $timeout(c, delay); // timeout starts AFTER failure
+            });
+
+            if(delay >= troubleThreshold) 
+                networkState.networkTrouble = true;
+
+            delay = delay * 2;
+        }
+
+        // Begin backoff with initialDelay
+        c();
+
+	return newP.promise;
+    };
+
+    var httpData = p => p.then(r => r.data);
+
     return {
+	networkState: networkState,
         getApps(callback){
-            backoff(() => $http.get('/app'),
-                    response => callback(response.data));
+            return httpData(qBackoff(() => $http.get('/app')));
         },
-        getApp(appId, callback){
-            backoff(() => $http.get('/app/' + appId),
-                    response => callback(response.data));
+        getApp(appId){
+            return httpData(qBackoff(() => $http.get('/app/' + appId)));
         },
-	deleteApp(appId, callback){
-	    $http.delete('/app/' + appId)
-		.then(response => callback(response.data));
+	deleteApp(appId){
+	    return httpData($http.delete('/app/' + appId));
 	},
         addApp(callback, name, description){
             $http.post('/app', {name: name, description: description}, {})
                 .then(response => callback(response.data),
                       failure => console.log('Failure adding app ' + name + ': ' + failure));
+        }, 
+        getStates(appId, callback){
+            return httpData(qBackoff(() => $http.get('/app/' + appId + '/state/')));
         },
         getProcesses(appId, callback){
-            backoff(() => $http.get('/app/' + appId + '/process'),
-                    response => callback(response.data));
+            return httpData(qBackoff(() => $http.get('/app/' + appId + '/process')));
         },
         addState(appId, name, description, callback){
             $http.post('/state', {name: name, description: description, appId: appId}, {})
@@ -271,10 +302,6 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', ($http, $timeout, 
                        command, {})
                 .then(response => callback(), 
                       response => console.log('Failed to post new command'));
-        },
-        getStates(appId, callback){
-            backoff(() => $http.get('/app/' + appId + '/state/'),
-                    response => callback(response.data));
         },
         addIncludeState(stateId, includeStateId, callback){
             $http.post('/state/' + stateId + '/include_state/' + includeStateId)

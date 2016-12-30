@@ -58,7 +58,7 @@ app pool = spockT id $ do
     json apps
   
   get ("app" <//> var) $ \appId -> do
-    app <- withDb $ P.get (toSqlKey appId :: Key App)
+    app :: Maybe App <- withDb $ P.get (toSqlKey appId)
     json app
 
   delete ("app" <//> var) $ \appId -> do
@@ -81,7 +81,7 @@ app pool = spockT id $ do
 
   -- New command in a process, with optional result state
   post ("state" <//> var <//> "process" <//> var <//> "command") $ \stateId processId -> do
-    Just (_ :: State) <- withDb $ P.get $ toSqlKey $ stateId -- State exists?
+    Just _ :: Maybe State <- withDb $ P.get $ toSqlKey $ stateId -- State exists?
                              
     note <- param' "note"
 
