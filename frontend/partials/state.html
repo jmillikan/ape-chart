@@ -13,7 +13,7 @@
       <select ng-model="includes.stateId">
         <option ng-repeat="state in states" value="{{state.id}}">{{state.name}}</option>
       </select>
-      <input type="button" value="Include" ng-click="includes.addState()">
+      <input ng-disabled="includes.stateId == null" type="button" value="Include" ng-click="includes.addState()">
     </span>
   </div>
 
@@ -45,7 +45,7 @@
       <ul class="dropdown-menu">
         <li><a ng-click="removeCommand()">Remove from process</a></li>
         <li role="separator" class="divider"></li>
-        <li><a ng-click="removeCommand()">Delete Command (Permanent)</a></li>
+        <li><a ng-click="deleteCommand()">Delete Command (Permanent)</a></li>
       </ul>
     </div>
 

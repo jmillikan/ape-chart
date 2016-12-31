@@ -71,6 +71,7 @@ appGuide.controller('MultiTreeController', ['$scope', 'state', ($scope, state) =
     $scope.appStateRootIds = [];
     $scope.addRootState = (id) => {
         id = Number(id); // This is sloppy but works for now.
+	$scope.refreshAppStates();
         
         // Note: The filter at the end of state.html also tries to prevent this wrt the state id stack.
         // Need to get explicit about handling the whole thing at some point.
@@ -91,10 +92,10 @@ appGuide.controller('MultiTreeController', ['$scope', 'state', ($scope, state) =
         visible: false,
         show: () => $scope.newState.visible = true,
         hide: () => $scope.newState.visible = false,
-        add: () => {
-            state.addState($scope.appId, $scope.newState.name, $scope.newState.description, 
-                           $scope.addRootState);
-            $scope.newState.visible = false;
+        add: () => {	    
+            state.addState($scope.appId, $scope.newState.name, $scope.newState.description)
+		.then($scope.addRootState);
+            $scope.newState.hide();
         }
     }
 }]);
@@ -128,10 +129,10 @@ appGuide.controller('StateController', ['$scope', 'state', ($scope, state) => {
     $scope.includes = {
         stateId: null,
         addState: () => {
-            state.addIncludeState($scope.stateId, $scope.includes.stateId, () => $scope.refreshState());
+            state.addIncludeState($scope.stateId, $scope.includes.stateId).then(() => $scope.refreshState());
         },
         removeState: (includeStateId) => {
-            state.removeIncludeState($scope.stateId, includeStateId, () => $scope.refreshState());
+            state.removeIncludeState($scope.stateId, includeStateId).then(() => $scope.refreshState());
         }
     };
 
@@ -174,11 +175,11 @@ appGuide.controller('CommandController', ['$scope', 'state', ($scope, state) => 
     $scope.hideResultState = () => $scope.resultStateExpanded = false;
 
     $scope.removeCommand = () => {
-        state.removeCommand($scope.command.id, $scope.processId, (r) => $scope.refreshState());
+        state.removeCommand($scope.command.id, $scope.processId).then((r) => $scope.refreshState());
     };
 
     $scope.deleteCommand = () => {
-        state.deleteCommand($scope.command.id, (r) => $scope.refreshState());
+        state.deleteCommand($scope.command.id).then((r) => $scope.refreshState());
     };
 }]);
 
@@ -200,6 +201,8 @@ appGuide.controller('AddCommandController', ['$scope', 'state', ($scope, state) 
             $scope.refreshState(); // Swiped from state
 	    $scope.refreshAppStates(); // Might have added a state
             $scope.hideAddCommand();
+
+	    $scope.clearCommand();
         });
 
     $scope.clearCommand();
@@ -271,36 +274,21 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', '$q', ($http, $tim
             httpData(qBackoff(() => $http.get('/app/' + appId + '/state/'))),
         getProcesses: (appId, callback) => 
             httpData(qBackoff(() => $http.get('/app/' + appId + '/process'))),
-        addState: (appId, name, description, callback) => {
-            $http.post('/state', {name: name, description: description, appId: appId}, {})
-                .then(response => callback(response.data),
-                      failure => console.log('Failure adding state ' + name));
-        },
+        addState: (appId, name, description) =>
+            httpData($http.post('/state', {name: name, description: description, appId: appId}, {})),
         getStateDetails: (stateId, callback) =>
 	    httpData(qBackoff(() => $http.get('/state/' + stateId))),
         addCommand: (stateId, processId, command) => 
             httpData($http.post('/state/' + stateId + '/process/' + (processId ? processId : -1) + '/command', 
 				command, {})),
-        addIncludeState: (stateId, includeStateId, callback) => {
-            $http.post('/state/' + stateId + '/include_state/' + includeStateId)
-                .then(response => callback(response.data),
-                      response => console.log('Failed to add include state'));
-        },
-        removeIncludeState: (stateId, includeStateId, callback) => {
-            $http.delete('/state/' + stateId + '/include_state/' + includeStateId)
-                .then(response => callback(response.data),
-                      response => console.log('Failed to add include state'));
-        },
-        deleteCommand: (commandId, callback) => {
-            $http.delete('/command/' + commandId)
-                .then(response => callback(response.data),
-                      response => console.log('Failed to delete command'));
-        },
-        removeCommand: (commandId, processId, callback) => {
-            $http.delete('/command/' + commandId + '/process/' + processId)
-                .then(response => callback(response.data),
-                      response => console.log('Failed to remove command-process'));
-        }
+        addIncludeState: (stateId, includeStateId) =>
+            httpData($http.post('/state/' + stateId + '/include_state/' + includeStateId)),
+        removeIncludeState: (stateId, includeStateId) => 
+            httpData($http.delete('/state/' + stateId + '/include_state/' + includeStateId)),
+        deleteCommand: (commandId) => 
+            httpData($http.delete('/command/' + commandId)),
+        removeCommand: (commandId, processId) => 
+            httpData($http.delete('/command/' + commandId + '/process/' + processId))
     };
 }]);
 
