@@ -33,9 +33,9 @@ spec wai = with wai $ do
         , ("description", "Set parameters for rotation of selected objects")
         ] `shouldRespondWith` 200
 
-    it "can be found once added" $ get "/state/4/process/1" `shouldRespondWith` 200
+    it "can be found once added" $ get "/state/4" `shouldRespondWith` 200
 
-    it "404 if they don't exist" $ get "/state/5/process/1" `shouldRespondWith` 404
+    it "404 if they don't exist" $ get "/state/5" `shouldRespondWith` 404
 
   describe "Commands" $ do
     it "can be added in a process" $ do
@@ -44,10 +44,12 @@ spec wai = with wai $ do
         , ("method", "r")
         , ("desc", "Rotate selection")
         , ("note", "In basic situations, you will frequently need the axis modifiers x/y/z.")
-        , ("resulteStateId", "4")
+        , ("resultStateId", "4")
         ] `shouldRespondWith` 200
 
     it "can be found once added" $ get "/command/6" `shouldRespondWith` 200
+
+    it "can be seen in the source state (BRITTLE)" $ get "/state/1" `shouldRespondWith` "{\"commands\":[{\"methodType\":\"keyboard-emacs\",\"resultStateId\":2,\"process\":[{\"processId\":1,\"commandId\":1,\"id\":1,\"notes\":\"Switch modes\"}],\"method\":\"TAB\",\"stateId\":1,\"id\":1,\"description\":\"Switch to Edit Mode\"},{\"methodType\":\"keyboard-emacs\",\"resultStateId\":3,\"process\":[{\"processId\":1,\"commandId\":2,\"id\":2,\"notes\":\"For positioning objects\"}],\"method\":\"g\",\"stateId\":1,\"id\":2,\"description\":\"Grab\"},{\"methodType\":\"keyboard-emacs\",\"resultStateId\":4,\"process\":[{\"processId\":1,\"commandId\":6,\"id\":4,\"notes\":\"In basic situations, you will frequently need the axis modifiers x/y/z.\"}],\"method\":\"r\",\"stateId\":1,\"id\":6,\"description\":\"Rotate selection\"}],\"appId\":1,\"name\":\"Object Mode\",\"includes\":[],\"id\":1,\"description\":\"Object Mode with 3D View acive\"}"
 
     it "404 if they don't exist" $ get "/command/7" `shouldRespondWith` 404
 

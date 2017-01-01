@@ -97,7 +97,7 @@ app pool = spockT id $ do
     commandId <- withDb $ do -- Transaction???
       resultStateKey <- getResultState
       cid <- P.insert $ command (Just resultStateKey)
-      when (processId < 0) $ -- I hate sentinel values
+      when (processId > 0) $ -- I hate sentinel values
         void $ P.insert $ CommandProcess (toSqlKey processId) cid note
       return cid
     json $ fromSqlKey commandId
