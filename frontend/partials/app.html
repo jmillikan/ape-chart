@@ -20,6 +20,17 @@
     <div class="checkbox">
       <label><input type="checkbox" ng-model="oop">Out-of-process commands</label>
     </div>
+    <button type="submit" ng-click="newProcess.show()">New Process</button>
+  </form>
+  <form class="form-inline" ng-if="newProcess.visible">
+    <div class="form-group">
+      <input placeholder="name" type="text" ng-model="newProcess.name">
+    </div>
+    <div class="form-group">
+      <input placeholder="description" type="text" ng-model="newProcess.description">
+    </div>
+    <button type="submit" ng-click="newProcess.create()">Create Process</button>
+    <button type="submit" ng-click="newProcess.hide()">Cancel</button>
   </form>
   <div ng-controller="MultiTreeController">
 

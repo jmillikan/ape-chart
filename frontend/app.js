@@ -38,8 +38,6 @@ appGuide.controller('ChooseAppController', ['$scope', 'state', ($scope, state) =
    Thankfully everything used is either immediate (UI states), from 1 level up (stateId), or in fudge scope (addRootState etc).
 */
 appGuide.controller('AppFudgeController', ['$scope', 'state', '$routeParams', '$location', ($scope, state, $routeParams, $location) => {
-    console.log('Loading app fudge');
-
     $scope.appId = Number($routeParams.appId);
     $scope.app = null;
     $scope.confirmDelete = () => {
@@ -57,9 +55,30 @@ appGuide.controller('AppFudgeController', ['$scope', 'state', '$routeParams', '$
     $scope.refreshAppStates();
 
     $scope.processes = [];
-    state.getProcesses($scope.appId).then((processes) => $scope.processes = processes);
+    $scope.refreshProcesses = () =>
+	state.getProcesses($scope.appId).then((processes) => $scope.processes = processes);
+    $scope.refreshProcesses();
 
     $scope.processId = null;
+
+    $scope.newProcess = {
+	visible: false,
+	name: '',
+	description: '',
+	show: () => $scope.newProcess.visible = true,
+	hide: () => {
+	    $scope.newProcess.visible = false;
+	    $scope.newProcess.name = '';
+	    $scope.newProcess.description = '';
+	},
+	create: () =>
+	    state.addProcess($scope.appId, $scope.newProcess.name, $scope.newProcess.description)
+	    .then((newProcess) => {
+		$scope.newProcess.hide();
+		$scope.refreshProcesses();
+		//$scope.processId = TODO...
+	    })
+    };
 
     // Show out-of-process
     $scope.oop = false;
@@ -272,10 +291,12 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', '$q', ($http, $tim
 	    httpData($http.post('/app', {name: name, description: description}, {})),
         getStates: (appId, callback) =>
             httpData(qBackoff(() => $http.get('/app/' + appId + '/state/'))),
-        getProcesses: (appId, callback) => 
+        getProcesses: (appId) => 
             httpData(qBackoff(() => $http.get('/app/' + appId + '/process'))),
+	addProcess: (appId, name, description) =>
+	    httpData($http.post('/app/' + appId + '/process', {name, description})),
         addState: (appId, name, description) =>
-            httpData($http.post('/state', {name: name, description: description, appId: appId}, {})),
+            httpData($http.post('/state', {name, description, appId}, {})),
         getStateDetails: (stateId, callback) =>
 	    httpData(qBackoff(() => $http.get('/state/' + stateId))),
         addCommand: (stateId, processId, command) => 

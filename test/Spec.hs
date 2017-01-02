@@ -63,3 +63,13 @@ spec wai = with wai $ do
     it "Can be found once added" $ get "/app/2" `shouldRespondWith` 200
       
     it "404 if they don't exist" $ get "/app/3" `shouldRespondWith` 404
+
+  describe "Process" $ do
+    it "Can be added" $ do
+      postHtmlForm "/app/1/process"
+                   [("name", "UV Mapping")
+                   ,("description", "Map points on mesh to points on ...")
+                   ] `shouldRespondWith` 200
+
+    it "Can be found once added (BRITTLE)" $ get "/app/1/process" `shouldRespondWith` "[{\"appId\":1,\"name\":\"Basic 3D\",\"id\":1,\"description\":\"Simple 3D Scene and model editing\"},{\"appId\":1,\"name\":\"UV Mapping\",\"id\":2,\"description\":\"Map points on mesh to points on ...\"}]"
+      
