@@ -13,6 +13,8 @@
   <form class="form-inline">
     <div class="form-group">
       <select style="max-width: 300px" class="form-control" ng-model="processId">
+	<!-- Need to use https://docs.angularjs.org/api/ng/directive/ngOptions or something... -->
+	
         <option value="">No process selected</option>
         <option ng-repeat="process in processes" value="{{process.id}}">{{process.name}}</option>
       </select>

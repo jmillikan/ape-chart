@@ -13,9 +13,38 @@ import Control.Monad.Logger
 import Data.Int (Int64)
 import Data.Aeson hiding (json)
 import Data.Text (Text, pack)
+import Data.Text.Lazy.Encoding (decodeUtf8)
+import Data.String (fromString)
 import qualified Data.List as L
 import qualified Data.Function as F
 import qualified Data.Maybe as DM
+import qualified Data.ByteString.Lazy as LS
+
+import Control.Lens (preview, set, (&), (.~))
+
+import Network.HTTP.Types.Status
+import Network.Wai (Middleware)
+import qualified Network.Wai.Middleware.Static as M
+
+import Web.Spock.Safe
+
+import Crypto.JOSE.Error (Error)
+import Crypto.JOSE.JWK
+import Crypto.JOSE.JWS (Protection(Protected), newJWSHeader)
+import Crypto.JOSE.Compact (encodeCompact)
+import Crypto.JWT
+  ( JWTError
+  , ClaimsSet
+  , emptyClaimsSet
+  , createJWSJWT
+  , validateJWSJWT
+  , defaultJWTValidationSettings
+  , audiencePredicate
+  , claimIss
+  , claimSub
+  )
+
+import Control.Monad.Except (runExceptT)
 
 -- These four identifiers are the subject of collisions *and* confusion...
 import qualified Database.Persist as P (get, update, insert, delete, selectList, (==.)) 
@@ -23,12 +52,8 @@ import qualified Database.Esqueleto as E (select)
 import Database.Persist ((=.))
 import Database.Esqueleto hiding (update, get, Value, (=.), select, delete, groupBy)
 import qualified Database.Persist.Sqlite as Sqlite
-import Web.Spock.Safe
-import qualified Network.Wai.Middleware.Static as M
-import Network.HTTP.Types.Status
 
 import Data.Pool (Pool)
-import Network.Wai (Middleware)
 
 import Db
 
@@ -46,17 +71,36 @@ runApp dbFilename portNum = do
 app :: Pool SqlBackend -> IO Network.Wai.Middleware
 app pool = spockT id $ do
   let withDb f = liftIO $ runSqlPersistMPool f pool
-  
+
   c <- liftIO $ M.initCaching M.NoCaching
+
+  -- Works on my machine, what's the big deal?
+  Just (jwk :: JWK) <- liftIO $ decode <$> LS.readFile "app-guide.jwk"
 
   middleware $ M.staticPolicy' c $ M.addBase "frontend"
 
   get root $ file "text/html" "frontend/index.html"
 
+  post ("jwt") $ do
+    uname :: String <- param' "username"
+    password :: String <- param' "password"
+
+    if uname == "jmillikan" && password == "jmillikan" then do
+                   result <- runExceptT $ do
+                         alg <- bestJWSAlg jwk
+                         let header = newJWSHeader (Protected, alg)
+                         let claims = makeClaims uname
+                         createJWSJWT jwk header claims >>= encodeCompact
+
+                   case result of
+                     Left (e :: Error) -> fail "Failure!"
+                     Right jwt -> json (decodeUtf8 jwt)
+    else fail "Wrong username or password"
+
   get ("app") $ do
     apps :: [Entity App] <- withDb $ P.selectList [] []
     json apps
-  
+
   get ("app" <//> var) $ \appId -> do
     app :: Maybe App <- withDb $ P.get (toSqlKey appId)
     json app
@@ -196,6 +240,13 @@ app pool = spockT id $ do
 collapseChildren :: Eq a => [(a,Maybe b)] -> [(a,[b])]
 collapseChildren joined = map extractParent $ L.groupBy (F.on (==) fst) joined
     where extractParent all@((p,_):_) = (p, DM.catMaybes $ map snd all)
+
+makeClaims uname = emptyClaimsSet
+  & claimIss .~ Just (fromString "https://app-guide.jmillikan.com/")
+  & claimSub .~ Just (fromString uname)
+  -- & claimExp .~ intDate "2011-03-22 18:43:00"
+  -- & over unregisteredClaims (insert "http://example.com/is_root" (Bool True))
+  -- & addClaim "http://example.com/is_root" (Bool True)
 
 getProcessState :: StateId -> SqlPersistM (Maybe StateForProcess)
 getProcessState stateId = do

@@ -24,10 +24,6 @@ State json
   name T.Text
   description T.Text
   deriving Show
--- Note json
---   stateId StateId
---   text T.Text
---   deriving Show
 Command json
   stateId StateId
   methodType T.Text

@@ -15,6 +15,16 @@ appGuide.controller('AppController', ['$rootScope', 'state', ($rootScope, state)
 appGuide.controller('ChooseAppController', ['$scope', 'state', ($scope, state) => {
     $scope.apps = [];
 
+    state.getJwt("jmillikan", "jmillikan").then((jwtData) => {
+	console.log("JWT (good):");
+	console.log(jwtData);
+    });
+
+    state.getJwt("gingie", "bottle").then((jwtData) => {
+	console.log("JWT (bad):");
+	console.log(jwtData);
+    });
+
     $scope.refreshApps = () => state.getApps().then((apps) => $scope.apps = apps);
 
     // Directive as t->inf
@@ -281,6 +291,7 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', '$q', ($http, $tim
 
     return {
 	networkState: networkState,
+	getJwt: (username, password) => httpData($http.post('/jwt', {username, password})),
         getApps: (callback) =>
 	    httpData(qBackoff(() => $http.get('/app'))),
         getApp: (appId) =>
