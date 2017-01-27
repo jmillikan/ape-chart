@@ -26,7 +26,8 @@ import Network.HTTP.Types.Status
 import Network.Wai (Middleware)
 import qualified Network.Wai.Middleware.Static as M
 
-import Web.Spock.Safe
+import Web.Spock
+import Web.Spock.Config
 
 import Crypto.JOSE.Error (Error)
 import Crypto.JOSE.JWK
@@ -69,7 +70,7 @@ runApp dbFilename portNum = do
     NoLoggingT $ runSpock portNum $ app pool
 
 app :: Pool SqlBackend -> IO Network.Wai.Middleware
-app pool = spockT id $ do
+app pool = defaultSpockCfg () PCNoDatabase () >>= flip spock (do
   let withDb f = liftIO $ runSqlPersistMPool f pool
 
   c <- liftIO $ M.initCaching M.NoCaching
@@ -232,7 +233,7 @@ app pool = spockT id $ do
           return ()
         [] -> do
           P.insert $ CommandProcess (toSqlKey processId) (toSqlKey commandId) note
-          return ()
+          return ())
 
 (cpCommandId, cpProcessId) = (CommandProcessCommandId, CommandProcessProcessId)
 (isIncludedStateId, isStateId) = (IncludeStateIncludedStateId, IncludeStateStateId)
