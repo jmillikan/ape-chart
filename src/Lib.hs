@@ -4,7 +4,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE QuasiQuotes #-}
---{-# LANGUAGE TypeFamilies #-}
 
 module Lib
     ( runApp, app
@@ -12,8 +11,8 @@ module Lib
 
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Control.Monad.Trans.Class (lift)
-import Control.Monad (when, void, liftM)
-import Control.Monad.Logger
+import Control.Monad (when, void)
+import Control.Monad.Logger (runNoLoggingT, NoLoggingT(..))
 import Data.Int (Int64)
 import Data.Aeson hiding (json)
 import Data.Text (Text, pack)
@@ -34,7 +33,7 @@ import Web.Spock
 import Web.Spock.Config
 
 import Crypto.JOSE.Error (Error)
-import Crypto.JOSE.JWK
+import Crypto.JOSE.JWK (JWK, bestJWSAlg)
 import Crypto.JOSE.JWS (Protection(Protected), newJWSHeader)
 import Crypto.JOSE.Compact (encodeCompact)
 import Crypto.JWT
@@ -56,7 +55,7 @@ import qualified Database.Persist as PE (get, update, insert, delete, selectList
 import qualified Database.Esqueleto as E (select)
 import Database.Persist ((=.))
 import Database.Esqueleto hiding (update, get, Value, (=.), select, delete, groupBy)
-import qualified Database.Persist.Sqlite as Sqlite
+import Database.Persist.Sqlite (runSqlite, runMigration, withSqlitePool)
 
 import Data.Pool (Pool)
 
@@ -67,10 +66,10 @@ import Db
 
 runApp :: String -> Int -> IO ()
 runApp dbFilename portNum = do
-  Sqlite.runSqlite (pack dbFilename) $ Sqlite.runMigration migrateAll
+  runSqlite (pack dbFilename) $ runMigration migrateAll
 
   -- Go back over setup stuff in... "The future"
-  runNoLoggingT $ Sqlite.withSqlitePool (pack dbFilename) 10 $ \pool ->
+  runNoLoggingT $ withSqlitePool (pack dbFilename) 10 $ \pool ->
     NoLoggingT $ runSpock portNum $ app pool
 
 withDb f = runQuery (\conn -> runSqlPersistM f conn)

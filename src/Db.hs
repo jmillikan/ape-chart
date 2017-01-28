@@ -11,10 +11,17 @@ import qualified Data.Text as T
 import Data.Aeson
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
+User json
+  username T.Text
+  pass T.Text
 App json
   name T.Text
   description T.Text
   deriving Show
+AppAccess json
+  userId UserId
+  appId AppId
+  UniqueUserApp userId appId
 IncludeState json
   stateId StateId
   includedStateId StateId
