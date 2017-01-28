@@ -1,12 +1,16 @@
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE QuasiQuotes #-}
+--{-# LANGUAGE TypeFamilies #-}
 
 module Lib
     ( runApp, app
     ) where
 
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class (liftIO, MonadIO)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad (when, void, liftM)
 import Control.Monad.Logger
@@ -48,7 +52,7 @@ import Crypto.JWT
 import Control.Monad.Except (runExceptT)
 
 -- These four identifiers are the subject of collisions *and* confusion...
-import qualified Database.Persist as P (get, update, insert, delete, selectList, (==.)) 
+import qualified Database.Persist as PE (get, update, insert, delete, selectList, (==.)) 
 import qualified Database.Esqueleto as E (select)
 import Database.Persist ((=.))
 import Database.Esqueleto hiding (update, get, Value, (=.), select, delete, groupBy)
@@ -58,7 +62,7 @@ import Data.Pool (Pool)
 
 import Db
 
--- P.get returns State, E.select returns Entity State.
+-- PE.get returns State, E.select returns Entity State.
 -- Trying not to intermix them for clarity
 
 runApp :: String -> Int -> IO ()
@@ -69,10 +73,10 @@ runApp dbFilename portNum = do
   runNoLoggingT $ Sqlite.withSqlitePool (pack dbFilename) 10 $ \pool ->
     NoLoggingT $ runSpock portNum $ app pool
 
-app :: Pool SqlBackend -> IO Network.Wai.Middleware
-app pool = defaultSpockCfg () PCNoDatabase () >>= flip spock (do
-  let withDb f = liftIO $ runSqlPersistMPool f pool
+withDb f = runQuery (\conn -> runSqlPersistM f conn)
 
+app :: Pool SqlBackend -> IO Network.Wai.Middleware
+app pool = defaultSpockCfg () (PCPool pool) () >>= flip spock (do
   c <- liftIO $ M.initCaching M.NoCaching
 
   -- Works on my machine, what's the big deal?
@@ -99,15 +103,15 @@ app pool = defaultSpockCfg () PCNoDatabase () >>= flip spock (do
     else fail "Wrong username or password"
 
   get ("app") $ do
-    apps :: [Entity App] <- withDb $ P.selectList [] []
+    apps :: [Entity App] <- withDb $ PE.selectList [] []
     json apps
 
   get ("app" <//> var) $ \appId -> do
-    app :: Maybe App <- withDb $ P.get (toSqlKey appId)
+    app :: Maybe App <- withDb $ PE.get (toSqlKey appId)
     json app
 
   delete ("app" <//> var) $ \appId -> do
-    withDb $ P.delete (toSqlKey appId :: Key App)
+    withDb $ PE.delete (toSqlKey appId :: Key App)
     json appId
 
   -- Some of these are shaped like REST endpoints but really aren't
@@ -116,17 +120,17 @@ app pool = defaultSpockCfg () PCNoDatabase () >>= flip spock (do
     maybe (setStatus notFound404) json state
 
   get ("app" <//> var <//> "state") $ \appId -> do
-    states <- withDb $ P.selectList [StateAppId P.==. appId] []
+    states <- withDb $ PE.selectList [StateAppId PE.==. appId] []
     json states
 
   post ("app") $ do
     app <- App <$> param' "name" <*> param' "description"
-    newApp <- withDb $ P.insert app
+    newApp <- withDb $ PE.insert app
     json (newApp :: Key App)
 
   -- New command in a process, with optional result state
   post ("state" <//> var <//> "process" <//> var <//> "command") $ \stateId processId -> do
-    Just s :: Maybe State <- withDb $ P.get $ toSqlKey $ stateId -- State exists?
+    Just s :: Maybe State <- withDb $ PE.get $ toSqlKey $ stateId -- State exists?
                              
     note <- param' "note"
 
@@ -134,16 +138,16 @@ app pool = defaultSpockCfg () PCNoDatabase () >>= flip spock (do
     getResultState <- case resultStateId of
       "" -> do
         newState <- State (stateAppId s) <$> param' "stateName" <*> param' "stateDesc" -- Is this lazy?
-        return $ P.insert newState 
+        return $ PE.insert newState 
       n -> return $ return $ toSqlKey $ read $ resultStateId -- This is dumb
            
     command <- Command (toSqlKey stateId) <$> param' "methodType" <*> param' "method" <*> param' "desc" -- <*> stateId...
            
     commandId <- withDb $ do -- Transaction???
       resultStateKey <- getResultState
-      cid <- P.insert $ command (Just resultStateKey)
+      cid <- PE.insert $ command (Just resultStateKey)
       when (processId > 0) $ -- I hate sentinel values
-        void $ P.insert $ CommandProcess (toSqlKey processId) cid note
+        void $ PE.insert $ CommandProcess (toSqlKey processId) cid note
       return cid
     json $ fromSqlKey commandId
 
@@ -159,7 +163,7 @@ app pool = defaultSpockCfg () PCNoDatabase () >>= flip spock (do
 
   -- Delete command
   delete ("command" <//> var) $ \commandId -> do
-    c <- withDb $ P.delete (toSqlKey commandId :: Key Command)
+    c <- withDb $ PE.delete (toSqlKey commandId :: Key Command)
     json commandId
 
   -- Remove command from process
@@ -176,28 +180,28 @@ app pool = defaultSpockCfg () PCNoDatabase () >>= flip spock (do
   -- Some blanket add & fetch endpoints
   -- For testing porpoises >_<
   get ("command" <//> var) $ \commandId -> do
-    (command :: Maybe Command) <- withDb (P.get $ toSqlKey commandId)
+    (command :: Maybe Command) <- withDb (PE.get $ toSqlKey commandId)
     maybe (setStatus notFound404) json command
 
   get ("app" <//> var) $ \appId -> do
-    (command :: Maybe App) <- withDb (P.get $ toSqlKey appId)
+    (command :: Maybe App) <- withDb (PE.get $ toSqlKey appId)
     maybe (setStatus notFound404) json command
 
   post ("state") $ do
     state <- State <$> param' "appId" <*> param' "name" <*> param' "description"
-    stateId <- withDb $ P.insert state
+    stateId <- withDb $ PE.insert state
     json $ fromSqlKey stateId
 
   post ("app") $ do
     app <- App <$> param' "name" <*> param' "description"
-    appId <- withDb $ P.insert app
+    appId <- withDb $ PE.insert app
     json $ fromSqlKey appId
 
   post ("app" <//> var <//> "process") $ \appId -> do
     let appKey = toSqlKey appId
     process <- Process appKey <$> param' "name" <*> param' "description"
-    (Just app) <- withDb $ P.get appKey
-    processId <- withDb $ P.insert process
+    (Just app) <- withDb $ PE.get appKey
+    processId <- withDb $ PE.insert process
     json $ fromSqlKey processId
 
   -- Update command...
@@ -207,7 +211,7 @@ app pool = defaultSpockCfg () PCNoDatabase () >>= flip spock (do
     desc <- param' "desc"
     resultStateId <- param "resultStateId"
 
-    withDb $ P.update (toSqlKey commandIdRaw)
+    withDb $ PE.update (toSqlKey commandIdRaw)
       [ CommandResultStateId =. toSqlKey <$> read <$> resultStateId
       , CommandMethodType =. methodType
       , CommandMethod =. method
@@ -229,10 +233,10 @@ app pool = defaultSpockCfg () PCNoDatabase () >>= flip spock (do
 
       case found of
         [cp] -> do
-          P.update (entityKey cp) [ CommandProcessNotes =. note ]
+          PE.update (entityKey cp) [ CommandProcessNotes =. note ]
           return ()
         [] -> do
-          P.insert $ CommandProcess (toSqlKey processId) (toSqlKey commandId) note
+          PE.insert $ CommandProcess (toSqlKey processId) (toSqlKey commandId) note
           return ())
 
 (cpCommandId, cpProcessId) = (CommandProcessCommandId, CommandProcessProcessId)

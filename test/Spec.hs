@@ -10,7 +10,8 @@ import Test.Hspec.Wai.JSON
 import qualified Database.Persist.Sqlite as Sqlite
 import Data.Aeson (Value(..), object, (.=))
 
-import Web.Spock.Shared
+import Web.Spock (spockAsApp)
+import Web.Spock.Config
 
 import Lib (app)
 
