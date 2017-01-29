@@ -15,8 +15,9 @@ import Control.Monad (when, void)
 import Control.Monad.Logger (runNoLoggingT, NoLoggingT(..))
 import Data.Int (Int64)
 import Data.Aeson hiding (json)
-import Data.Text (Text, pack)
-import Data.Text.Lazy.Encoding (decodeUtf8)
+import Data.Text (Text, pack, unpack)
+import Data.Text.Lazy.Encoding (decodeUtf8, encodeUtf8)
+import qualified Data.Text.Encoding as DTE
 import Data.String (fromString)
 import qualified Data.List as L
 import qualified Data.Function as F
@@ -48,10 +49,12 @@ import Crypto.JWT
   , claimSub
   )
 
+import Crypto.BCrypt
+
 import Control.Monad.Except (runExceptT)
 
 -- These four identifiers are the subject of collisions *and* confusion...
-import qualified Database.Persist as PE (get, update, insert, delete, selectList, (==.)) 
+import qualified Database.Persist as PE (get, update, insert, delete, selectList, selectFirst, (==.)) 
 import qualified Database.Esqueleto as E (select)
 import Database.Persist ((=.))
 import Database.Esqueleto hiding (update, get, Value, (=.), select, delete, groupBy)
@@ -64,7 +67,7 @@ import Db
 -- PE.get returns State, E.select returns Entity State.
 -- Trying not to intermix them for clarity
 
-runApp :: String -> Int -> IO ()
+runApp :: FilePath -> Int -> IO ()
 runApp dbFilename portNum = do
   runSqlite (pack dbFilename) $ runMigration migrateAll
 
@@ -75,7 +78,12 @@ runApp dbFilename portNum = do
 withDb f = runQuery (\conn -> runSqlPersistM f conn)
 
 app :: Pool SqlBackend -> IO Network.Wai.Middleware
-app pool = defaultSpockCfg () (PCPool pool) () >>= flip spock (do
+app pool = do
+  cfg <- defaultSpockCfg () (PCPool pool) ()
+  spock cfg api
+
+api :: SpockM SqlBackend () () ()
+api = do
   c <- liftIO $ M.initCaching M.NoCaching
 
   -- Works on my machine, what's the big deal?
@@ -86,20 +94,48 @@ app pool = defaultSpockCfg () (PCPool pool) () >>= flip spock (do
   get root $ file "text/html" "frontend/index.html"
 
   post ("jwt") $ do
-    uname :: String <- param' "username"
-    password :: String <- param' "password"
+    uname :: Text <- param' "username"
+    password :: Text <- param' "password"
 
-    if uname == "jmillikan" && password == "jmillikan" then do
-                   result <- runExceptT $ do
+    let authFail = do
+          setStatus status401
+          text "Wrong username or password"
+
+    mUser <- withDb $ PE.selectFirst [UserUsername PE.==. uname] []
+
+    user <- case mUser of
+      Nothing -> authFail
+      Just u -> return u
+
+    let passHash = userPassword (entityVal user)
+
+    if not $ validatePassword (DTE.encodeUtf8 passHash) (DTE.encodeUtf8 password) 
+    then authFail
+    else do result <- runExceptT $ do
                          alg <- bestJWSAlg jwk
                          let header = newJWSHeader (Protected, alg)
-                         let claims = makeClaims uname
-                         createJWSJWT jwk header claims >>= encodeCompact
+                         createJWSJWT jwk header (makeClaims uname) >>= encodeCompact
 
-                   case result of
-                     Left (e :: Error) -> fail "Failure!"
-                     Right jwt -> json (decodeUtf8 jwt)
-    else fail "Wrong username or password"
+                   -- To lazy text via bytestring, I guess.
+            case result of
+                Left (e :: Error) -> fail "Failure making JWT claims set"
+                Right jwt -> json (decodeUtf8 jwt)
+
+  post ("user") $ do
+    (uname :: Text) <- param' "username"
+    (password :: Text) <- param' "password"
+
+    users <- withDb $ PE.selectList [UserUsername PE.==. uname] []
+
+    when (length users /= 0) $ do
+      fail "That username is not available."
+
+    (Just h) <- liftIO $ hashPasswordUsingPolicy slowerBcryptHashingPolicy (DTE.encodeUtf8 password)
+
+    let user = User uname (DTE.decodeUtf8 h) -- Write a failing test for this...
+    newUserId <- withDb $ PE.insert user
+    
+    json newUserId
 
   get ("app") $ do
     apps :: [Entity App] <- withDb $ PE.selectList [] []
@@ -236,7 +272,7 @@ app pool = defaultSpockCfg () (PCPool pool) () >>= flip spock (do
           return ()
         [] -> do
           PE.insert $ CommandProcess (toSqlKey processId) (toSqlKey commandId) note
-          return ())
+          return ()
 
 (cpCommandId, cpProcessId) = (CommandProcessCommandId, CommandProcessProcessId)
 (isIncludedStateId, isStateId) = (IncludeStateIncludedStateId, IncludeStateStateId)
@@ -245,9 +281,10 @@ collapseChildren :: Eq a => [(a,Maybe b)] -> [(a,[b])]
 collapseChildren joined = map extractParent $ L.groupBy (F.on (==) fst) joined
     where extractParent all@((p,_):_) = (p, DM.catMaybes $ map snd all)
 
+makeClaims :: Text -> ClaimsSet
 makeClaims uname = emptyClaimsSet
   & claimIss .~ Just (fromString "https://app-guide.jmillikan.com/")
-  & claimSub .~ Just (fromString uname)
+  & claimSub .~ Just (fromString $ unpack uname) -- Why String though?
   -- & claimExp .~ intDate "2011-03-22 18:43:00"
   -- & over unregisteredClaims (insert "http://example.com/is_root" (Bool True))
   -- & addClaim "http://example.com/is_root" (Bool True)

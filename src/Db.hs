@@ -13,7 +13,7 @@ import Data.Aeson
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
 User json
   username T.Text
-  pass T.Text
+  password T.Text
 App json
   name T.Text
   description T.Text

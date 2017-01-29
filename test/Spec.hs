@@ -7,24 +7,47 @@ import System.Directory
 import Test.Hspec hiding (pending)
 import Test.Hspec.Wai
 import Test.Hspec.Wai.JSON
-import qualified Database.Persist.Sqlite as Sqlite
+import qualified Database.Persist.Sqlite as SQ
 import Data.Aeson (Value(..), object, (.=))
 
 import Web.Spock (spockAsApp)
 import Web.Spock.Config
 
 import Lib (app)
+import Db (migrateAll)
 
 main :: IO ()
 main = do
   copyFile "example.db" "test.db"
+
+  SQ.runSqlite "test.db" $ SQ.runMigration migrateAll
+
   -- Ideally this would recreate the DB each request
-  runNoLoggingT $ Sqlite.withSqlitePool "test.db" 10 $ \pool -> 
+  runNoLoggingT $ SQ.withSqlitePool "test.db" 10 $ \pool -> 
     NoLoggingT $ hspec $ spec (spockAsApp $ app pool)
 
 spec wai = with wai $ do
   -- Scripty tests are not a spec and not ideal, but better than nothing
   -- test.db starts with 3 states, 5 commands, 1 process, and *should* auto-increment cleanly
+
+  describe "Users" $ do
+    it "can be added" $ do
+      postHtmlForm "/user"
+        [ ("username", "johndoe")
+        , ("password", "rosebud")
+        ] `shouldRespondWith` 200
+
+    it "can't get a token with wrong password" $ do
+      postHtmlForm "/jwt"
+        [ ("username", "johndoe")
+        , ("password", "shibboleth")
+        ] `shouldRespondWith` 401
+
+    it "can get a token" $ do
+      postHtmlForm "/jwt"
+        [ ("username", "johndoe")
+        , ("password", "rosebud")
+        ] `shouldRespondWith` 200
 
   describe "States" $ do
     it "can be added" $ do
