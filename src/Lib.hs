@@ -15,7 +15,9 @@ import Control.Monad (when, void)
 import Control.Monad.Logger (runNoLoggingT, NoLoggingT(..))
 import Data.Int (Int64)
 import Data.Aeson hiding (json)
-import Data.Text (Text, pack, unpack)
+import Data.Text (Text, pack, unpack, breakOn)
+import Data.Text.Lazy (fromStrict)
+import qualified Data.Text as T (tail)
 import Data.Text.Lazy.Encoding (decodeUtf8, encodeUtf8)
 import qualified Data.Text.Encoding as DTE
 import Data.String (fromString)
@@ -24,7 +26,7 @@ import qualified Data.Function as F
 import qualified Data.Maybe as DM
 import qualified Data.ByteString.Lazy as LS
 
-import Control.Lens (preview, set, (&), (.~))
+import Control.Lens (view, preview, set, (&), (.~))
 
 import Network.HTTP.Types.Status
 import Network.Wai (Middleware)
@@ -36,10 +38,12 @@ import Web.Spock.Config
 import Crypto.JOSE.Error (Error)
 import Crypto.JOSE.JWK (JWK, bestJWSAlg)
 import Crypto.JOSE.JWS (Protection(Protected), newJWSHeader)
-import Crypto.JOSE.Compact (encodeCompact)
+import Crypto.JOSE.Compact (encodeCompact, decodeCompact)
 import Crypto.JWT
   ( JWTError
   , ClaimsSet
+  , jwtClaimsSet
+  , getString    
   , emptyClaimsSet
   , createJWSJWT
   , validateJWSJWT
@@ -94,8 +98,8 @@ api = do
   get root $ file "text/html" "frontend/index.html"
 
   post ("jwt") $ do
-    uname :: Text <- param' "username"
-    password :: Text <- param' "password"
+    (uname :: Text) <- param' "username"
+    (password :: Text) <- param' "password"
 
     let authFail = do
           setStatus status401
@@ -137,6 +141,35 @@ api = do
     
     json newUserId
 
+  prehook (authenticated jwk) authApi
+
+authenticated jwk = do
+  auth <- header "Authentication"
+  token <- case auth of
+    Nothing -> fail "No authentication token"
+    Just t -> return $ T.tail $ snd $ breakOn t " "
+
+  result <- runExceptT $ do
+    jwtData <- decodeCompact (encodeUtf8 $ fromStrict token)
+    validateJWSJWT defaultJWTValidationSettings jwk jwtData
+    return jwtData
+
+  jwtClaims <- case result of
+    Left (e :: JWTError) -> fail "Error decoding JWT"
+    Right jwt -> return $ jwtClaimsSet jwt
+
+  let msub = view claimSub jwtClaims
+
+  username <- case msub of
+    Nothing -> fail "No sub in JWT"
+    Just sub -> return $ getString sub
+
+  case username of
+    Nothing -> fail "No username in sub... Must have been a URL?"
+    Just u -> return u
+
+authApi :: SpockCtxM Text SqlBackend () () ()
+authApi = do
   get ("app") $ do
     apps :: [Entity App] <- withDb $ PE.selectList [] []
     json apps
