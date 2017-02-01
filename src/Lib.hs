@@ -72,24 +72,8 @@ import Data.Pool (Pool)
 
 import Db
 
--- PE.get returns State, E.select returns Entity State.
--- Trying not to intermix them for clarity
 
-runApp :: FilePath -> Int -> IO ()
-runApp dbFilename portNum = do
-  runSqlite (pack dbFilename) $ runMigration migrateAll
-
-  -- Go back over setup stuff in... "The future"
-  runNoLoggingT $ withSqlitePool (pack dbFilename) 10 $ \pool ->
-    NoLoggingT $ runSpock portNum $ app pool
-
-withDb f = runQuery (\conn -> runSqlPersistM f conn)
-
-app :: Pool SqlBackend -> IO Network.Wai.Middleware
-app pool = do
-  cfg <- defaultSpockCfg () (PCPool pool) ()
-  spock cfg api
-
+-- Security - needs to go elsewhere
 getJWK :: IO (Maybe JWK)
 getJWK = decode <$> LS.readFile "app-guide.jwk"
 
@@ -107,6 +91,27 @@ validateToken jwk token = do
   jwtData <- decodeCompact (encodeUtf8 $ fromStrict token)
   validateJWSJWT defaultJWTValidationSettings jwk jwtData
   return $ view claimSub $ jwtClaimsSet jwtData
+-- End security stuff
+
+-- PE.get returns State, E.select returns Entity State.
+-- Trying not to intermix them for clarity
+
+-- Main entry point
+-- Needs some notion of configuration...
+runApp :: FilePath -> Int -> IO ()
+runApp dbFilename portNum = do
+  runSqlite (pack dbFilename) $ runMigration migrateAll
+
+  runNoLoggingT $ withSqlitePool (pack dbFilename) 10 $ \pool ->
+    NoLoggingT $ runSpock portNum $ app pool
+
+withDb f = runQuery (\conn -> runSqlPersistM f conn)
+
+-- WAI application - bring your own pool
+app :: Pool SqlBackend -> IO Network.Wai.Middleware
+app pool = do
+  cfg <- defaultSpockCfg () (PCPool pool) ()
+  spock cfg api
 
 api :: SpockM SqlBackend () () ()
 api = do
@@ -120,6 +125,22 @@ api = do
 
   get root $ file "text/html" "frontend/index.html"
 
+  unauthApi jwk
+  prehook (authenticated jwk) authApi
+
+authenticated :: JWK -> ActionCtxT () (WebStateM SqlBackend () ()) (Key User)
+authenticated jwk = do
+  auth <- header "Authorization"
+  mtoken <- maybe (fail "No authorization header") (return . stripPrefix "Bearer ") auth
+  token <- maybe (fail "Not bearer authorization") return mtoken
+
+  jwtResult <- runExceptT $ validateToken jwk token
+  msub <- either (\(_ :: JWTError) -> fail "Error decoding or validating JWT") return jwtResult
+  sub <- maybe (fail "No sub in JWT") (return . getString) msub
+  maybe (fail "No username in sub... Must have been a URL?") (return . toSqlKey . read . unpack) sub
+
+unauthApi :: JWK -> SpockCtxM () SqlBackend () () ()
+unauthApi jwk = do
   post ("jwt") $ do
     (uname :: Text) <- param' "username"
     (password :: Text) <- param' "password"
@@ -154,19 +175,6 @@ api = do
     newUserId <- withDb $ PE.insert user
     
     json newUserId
-
-  prehook (authenticated jwk) authApi
-
-authenticated :: JWK -> ActionCtxT () (WebStateM SqlBackend () ()) (Key User)
-authenticated jwk = do
-  auth <- header "Authorization"
-  mtoken <- maybe (fail "No authorization header") (return . stripPrefix "Bearer ") auth
-  token <- maybe (fail "Not bearer authorization") return mtoken
-
-  jwtResult <- runExceptT $ validateToken jwk token
-  msub <- either (\(_ :: JWTError) -> fail "Error decoding or validating JWT") return jwtResult
-  sub <- maybe (fail "No sub in JWT") (return . getString) msub
-  maybe (fail "No username in sub... Must have been a URL?") (return . toSqlKey . read . unpack) sub
 
 authApi :: SpockCtxM (Key User) SqlBackend () () ()
 authApi = do
