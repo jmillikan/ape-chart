@@ -166,7 +166,7 @@ authenticated jwk = do
   jwtResult <- runExceptT $ validateToken jwk token
   msub <- either (\(_ :: JWTError) -> fail "Error decoding or validating JWT") return jwtResult
   sub <- maybe (fail "No sub in JWT") (return . getString) msub
-  maybe (fail "No username in sub... Must have been a URL?") (return . read . unpack) sub
+  maybe (fail "No username in sub... Must have been a URL?") (return . toSqlKey . read . unpack) sub
 
 authApi :: SpockCtxM (Key User) SqlBackend () () ()
 authApi = do
@@ -320,8 +320,8 @@ collapseChildren joined = map extractParent $ L.groupBy (F.on (==) fst) joined
 
 makeClaims :: Key User -> ClaimsSet
 makeClaims userId = emptyClaimsSet
-  & claimIss .~ Just (fromString "https://app-guide.jmillikan.com/")
-  & claimSub .~ Just (fromString $ show userId)
+  & claimIss .~ Just (fromString "https://localhost/")
+  & claimSub .~ Just (fromString $ show $ fromSqlKey userId)
   -- & claimExp .~ intDate "2011-03-22 18:43:00"
   -- & over unregisteredClaims (insert "http://example.com/is_root" (Bool True))
   -- & addClaim "http://example.com/is_root" (Bool True)

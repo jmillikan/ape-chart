@@ -2,7 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Main (main) where
 
-import Data.ByteString.Lazy (toStrict)
+import Data.ByteString.Lazy (toStrict, fromStrict)
 
 import Control.Monad.Logger
 import System.Directory
@@ -27,6 +27,7 @@ import Control.Monad.Except (runExceptT)
 
 import Network.HTTP.Types.Header
 import Network.HTTP.Types.Method
+import Network.HTTP.Types.URI (urlEncode)
 
 main :: IO ()
 main = do
@@ -37,21 +38,27 @@ main = do
   mjwk <- getJWK
   jwk <- maybe (fail "Can't start tests, no JWK") return mjwk
 
-  mjwt <- runExceptT $ makeJWT jwk (toSqlKey 1 :: Key User)
+  -- Fudge a JWT for use with ID 1 and ID 2. This isn't very good.
+  mjwt1 <- runExceptT $ makeJWT jwk (toSqlKey 1 :: Key User)
+  jwt1 <- either (\(e :: Error) -> fail "Failure making JWT for test user") return mjwt1
 
-  jwt <- either (\(e :: Error) -> fail "Failure making JWT for test user") return mjwt
-  
+  mjwt2 <- runExceptT $ makeJWT jwk (toSqlKey 2 :: Key User)
+  jwt2 <- either (\(e :: Error) -> fail "Failure making JWT for test user") return mjwt2
+
   -- Ideally this would recreate the DB each request
   runNoLoggingT $ SQ.withSqlitePool "test.db" 10 $ \pool -> 
-    NoLoggingT $ hspec $ spec (spockAsApp $ app pool) (toStrict jwt)
+    NoLoggingT $ hspec $ spec (spockAsApp $ app pool) (toStrict jwt1) (toStrict jwt2)
 
-urlEncode = id
-formUrlEncodeQuery = foldr (\(k,v) s -> s <> "&" <> k <> "=" <> v) ""
+formUrlEncodeQuery = foldr (\(k,v) s -> s <> "&" <> (fromStrict $ urlEncode False k) <> "=" <> (fromStrict $ urlEncode False v)) ""
 
-spec wai userToken = with wai $ do
-  -- Scripty tests are not a spec and not ideal, but better than nothing
-  -- test.db starts with 3 states, 5 commands, 1 process, and *should* auto-increment cleanly
-  runIO $ putStrLn $ "Token: " <> show userToken
+postFormWithJWT path jwt form = request methodPost path [(hContentType, "application/x-www-form-urlencoded"), (hAuthorization, "Bearer " <> jwt)] (formUrlEncodeQuery form)
+
+getWithJWT path jwt = request methodGet path [(hAuthorization, "Bearer " <> jwt)] ""
+
+-- Assume userToken is for "user" and userToken2 is for "johndoe"
+spec wai userToken userToken2 = with wai $ do
+  -- Scripty tests are not a spec but better than nothing
+  -- test.db starts with 1 user, 3 states, 5 commands, 1 process, and *should* auto-increment cleanly
   
   describe "Users" $ do
     it "can be added" $ do
@@ -74,20 +81,24 @@ spec wai userToken = with wai $ do
 
   describe "States" $ do
     it "can be added" $ do
-      request methodPost "/state" [(hContentType, "application/x-www-form-urlencoded"), (hAuthorization, "Bearer " <> userToken)] (formUrlEncodeQuery
-        [ ("appId", "1")
-        , ("name", "Complete rotation")
-        , ("description", "Set parameters for rotation of selected objects")
-        ]) `shouldRespondWith` 200
-        
+      let a = do
+              r <- postFormWithJWT "/state" userToken
+                [ ("appId", "1")
+                , ("name", "Complete rotation")
+                , ("description", "Set parameters for rotation of selected objects")
+                ]
+              return r
+      a `shouldRespondWith` 200
 
-    it "can be found once added" $ get "/state/4" `shouldRespondWith` 200
+    it "can be found once added" $ getWithJWT "/state/4" userToken `shouldRespondWith` 200
 
-    it "404 if they don't exist" $ get "/state/5" `shouldRespondWith` 404
+    it "cannot be viewed by users without access" $ getWithJWT "/state/4" userToken2 `shouldRespondWith` 500
+
+    it "404 if they don't exist" $ getWithJWT "/state/5" userToken `shouldRespondWith` 404
 
   describe "Commands" $ do
     it "can be added in a process" $ do
-      postHtmlForm "/state/1/process/1/command" 
+      postFormWithJWT "/state/1/process/1/command" userToken
         [ ("methodType", "keyboard-emacs")
         , ("method", "r")
         , ("desc", "Rotate selection")
@@ -95,29 +106,34 @@ spec wai userToken = with wai $ do
         , ("resultStateId", "4")
         ] `shouldRespondWith` 200
 
-    it "can be found once added" $ get "/command/6" `shouldRespondWith` 200
+    it "can be found once added" $ getWithJWT "/command/6" userToken `shouldRespondWith` 200
 
-    it "can be seen in the source state (BRITTLE)" $ get "/state/1" `shouldRespondWith` "{\"commands\":[{\"methodType\":\"keyboard-emacs\",\"resultStateId\":2,\"process\":[{\"processId\":1,\"commandId\":1,\"id\":1,\"notes\":\"Switch modes\"}],\"method\":\"TAB\",\"stateId\":1,\"id\":1,\"description\":\"Switch to Edit Mode\"},{\"methodType\":\"keyboard-emacs\",\"resultStateId\":3,\"process\":[{\"processId\":1,\"commandId\":2,\"id\":2,\"notes\":\"For positioning objects\"}],\"method\":\"g\",\"stateId\":1,\"id\":2,\"description\":\"Grab\"},{\"methodType\":\"keyboard-emacs\",\"resultStateId\":4,\"process\":[{\"processId\":1,\"commandId\":6,\"id\":4,\"notes\":\"In basic situations, you will frequently need the axis modifiers x/y/z.\"}],\"method\":\"r\",\"stateId\":1,\"id\":6,\"description\":\"Rotate selection\"}],\"appId\":1,\"name\":\"Object Mode\",\"includes\":[],\"id\":1,\"description\":\"Object Mode with 3D View acive\"}"
+    it "cannot be viewed by users without access" $ getWithJWT "/command/6" userToken2 `shouldRespondWith` 500
 
-    it "404 if they don't exist" $ get "/command/7" `shouldRespondWith` 404
+    it "can be seen in the source state (BRITTLE)" $ getWithJWT "/state/1" userToken `shouldRespondWith` "{\"commands\":[{\"methodType\":\"keyboard-emacs\",\"resultStateId\":2,\"process\":[{\"processId\":1,\"commandId\":1,\"id\":1,\"notes\":\"Switch modes\"}],\"method\":\"TAB\",\"stateId\":1,\"id\":1,\"description\":\"Switch to Edit Mode\"},{\"methodType\":\"keyboard-emacs\",\"resultStateId\":3,\"process\":[{\"processId\":1,\"commandId\":2,\"id\":2,\"notes\":\"For positioning objects\"}],\"method\":\"g\",\"stateId\":1,\"id\":2,\"description\":\"Grab\"},{\"methodType\":\"keyboard-emacs\",\"resultStateId\":4,\"process\":[{\"processId\":1,\"commandId\":6,\"id\":4,\"notes\":\"In basic situations, you will frequently need the axis modifiers x/y/z.\"}],\"method\":\"r\",\"stateId\":1,\"id\":6,\"description\":\"Rotate selection\"}],\"appId\":1,\"name\":\"Object Mode\",\"includes\":[],\"id\":1,\"description\":\"Object Mode with 3D View acive\"}"
+
+    it "404 if they don't exist" $ getWithJWT "/command/7" userToken `shouldRespondWith` 404
 
   describe "Apps" $ do
     it "Can be added" $ do
-      postHtmlForm "/app"
+      postFormWithJWT "/app" userToken
         [ ("name", "ASP.NET MVC")
         , ("description", "ASP.NET MVC Web Framework in the Rails style")
         ] `shouldRespondWith` 200
 
-    it "Can be found once added" $ get "/app/2" `shouldRespondWith` 200
-      
-    it "404 if they don't exist" $ get "/app/3" `shouldRespondWith` 404
+    it "Can be found once added" $ getWithJWT "/app/2" userToken `shouldRespondWith` 200
+
+    it "Cannot be viewed by users without access" $ getWithJWT "/app/2" userToken2 `shouldRespondWith` 500
+
+    it "404 if they don't exist" $ getWithJWT "/app/3" userToken `shouldRespondWith` 404
 
   describe "Process" $ do
     it "Can be added" $ do
-      postHtmlForm "/app/1/process"
+      postFormWithJWT "/app/1/process" userToken
                    [("name", "UV Mapping")
                    ,("description", "Map points on mesh to points on ...")
                    ] `shouldRespondWith` 200
 
-    it "Can be found once added (BRITTLE)" $ get "/app/1/process" `shouldRespondWith` "[{\"appId\":1,\"name\":\"Basic 3D\",\"id\":1,\"description\":\"Simple 3D Scene and model editing\"},{\"appId\":1,\"name\":\"UV Mapping\",\"id\":2,\"description\":\"Map points on mesh to points on ...\"}]"
-      
+    it "Can be found once added (BRITTLE)" $ getWithJWT "/app/1/process" userToken `shouldRespondWith` "[{\"appId\":1,\"name\":\"Basic 3D\",\"id\":1,\"description\":\"Simple 3D Scene and model editing\"},{\"appId\":1,\"name\":\"UV Mapping\",\"id\":2,\"description\":\"Map points on mesh to points on ...\"}]"
+
+    it "Cannot be viewed by users without access" $ getWithJWT "/app/1/process" userToken2 `shouldRespondWith` 500
