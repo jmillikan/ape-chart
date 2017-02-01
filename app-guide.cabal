@@ -34,6 +34,7 @@ library
                      , mtl
                      , lens
                      , bcrypt
+                     , cryptonite
   default-language:    Haskell2010
 
 executable app-guide-exe
@@ -68,6 +69,11 @@ test-suite app-guide-test
                      , persistent-sqlite
                      , monad-logger                     
                      , directory
+                     , persistent
+                     , jose
+                     , mtl
+                     , http-types
+                     , bytestring
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010
 

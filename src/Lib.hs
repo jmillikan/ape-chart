@@ -6,16 +6,17 @@
 {-# LANGUAGE QuasiQuotes #-}
 
 module Lib
-    ( runApp, app
+    ( runApp, app, getJWK, makeJWT
     ) where
 
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Control.Monad.Trans.Class (lift)
+import Control.Monad.Error.Class (MonadError)
 import Control.Monad (when, void)
 import Control.Monad.Logger (runNoLoggingT, NoLoggingT(..))
 import Data.Int (Int64)
 import Data.Aeson hiding (json)
-import Data.Text (Text, pack, unpack, breakOn)
+import Data.Text (Text, pack, unpack, stripPrefix)
 import Data.Text.Lazy (fromStrict)
 import qualified Data.Text as T (tail)
 import Data.Text.Lazy.Encoding (decodeUtf8, encodeUtf8)
@@ -35,7 +36,7 @@ import qualified Network.Wai.Middleware.Static as M
 import Web.Spock
 import Web.Spock.Config
 
-import Crypto.JOSE.Error (Error)
+import Crypto.JOSE.Error (Error, AsError)
 import Crypto.JOSE.JWK (JWK, bestJWSAlg)
 import Crypto.JOSE.JWS (Protection(Protected), newJWSHeader)
 import Crypto.JOSE.Compact (encodeCompact, decodeCompact)
@@ -53,6 +54,8 @@ import Crypto.JWT
   , claimSub
   )
 
+import Crypto.Random.Types (MonadRandom)
+
 import Crypto.BCrypt
 
 import Control.Monad.Except (runExceptT)
@@ -61,6 +64,7 @@ import Control.Monad.Except (runExceptT)
 import qualified Database.Persist as PE (get, update, insert, delete, selectList, selectFirst, (==.)) 
 import qualified Database.Esqueleto as E (select)
 import Database.Persist ((=.))
+import Database.Persist.Sql (fromSqlKey)
 import Database.Esqueleto hiding (update, get, Value, (=.), select, delete, groupBy)
 import Database.Persist.Sqlite (runSqlite, runMigration, withSqlitePool)
 
@@ -86,12 +90,31 @@ app pool = do
   cfg <- defaultSpockCfg () (PCPool pool) ()
   spock cfg api
 
+getJWK :: IO (Maybe JWK)
+getJWK = decode <$> LS.readFile "app-guide.jwk"
+
+makeJWT
+  :: (Control.Monad.Error.Class.MonadError e m,
+      Crypto.JOSE.Error.AsError e,
+      Crypto.Random.Types.MonadRandom m) =>
+     JWK -> Key User -> m LS.ByteString
+makeJWT jwk userKey = do
+  alg <- bestJWSAlg jwk
+  let header = newJWSHeader (Protected, alg)
+  createJWSJWT jwk header (makeClaims $ userKey) >>= encodeCompact
+
+validateToken jwk token = do
+  jwtData <- decodeCompact (encodeUtf8 $ fromStrict token)
+  validateJWSJWT defaultJWTValidationSettings jwk jwtData
+  return $ view claimSub $ jwtClaimsSet jwtData
+
 api :: SpockM SqlBackend () () ()
 api = do
   c <- liftIO $ M.initCaching M.NoCaching
 
   -- Works on my machine, what's the big deal?
-  Just (jwk :: JWK) <- liftIO $ decode <$> LS.readFile "app-guide.jwk"
+  mjwk <- liftIO getJWK
+  jwk <- maybe (fail "Can't start application, no JWK") return mjwk
 
   middleware $ M.staticPolicy' c $ M.addBase "frontend"
 
@@ -106,35 +129,26 @@ api = do
           text "Wrong username or password"
 
     mUser <- withDb $ PE.selectFirst [UserUsername PE.==. uname] []
-
-    user <- case mUser of
-      Nothing -> authFail
-      Just u -> return u
+    user <- maybe authFail return mUser
 
     let passHash = userPassword (entityVal user)
 
-    if not $ validatePassword (DTE.encodeUtf8 passHash) (DTE.encodeUtf8 password) 
-    then authFail
-    else do result <- runExceptT $ do
-                         alg <- bestJWSAlg jwk
-                         let header = newJWSHeader (Protected, alg)
-                         createJWSJWT jwk header (makeClaims uname) >>= encodeCompact
+    when (not $ validatePassword (DTE.encodeUtf8 passHash) (DTE.encodeUtf8 password)) authFail
 
-                   -- To lazy text via bytestring, I guess.
-            case result of
-                Left (e :: Error) -> fail "Failure making JWT claims set"
-                Right jwt -> json (decodeUtf8 jwt)
+    result <- runExceptT $ makeJWT jwk (entityKey user)
+
+    -- To lazy text via bytestring, I guess.
+    either (\(e :: Error) -> fail "Failure making JWT claims set") (json . decodeUtf8) result
 
   post ("user") $ do
     (uname :: Text) <- param' "username"
     (password :: Text) <- param' "password"
 
     users <- withDb $ PE.selectList [UserUsername PE.==. uname] []
+    when (length users /= 0) $ fail "That username is not available."
 
-    when (length users /= 0) $ do
-      fail "That username is not available."
-
-    (Just h) <- liftIO $ hashPasswordUsingPolicy slowerBcryptHashingPolicy (DTE.encodeUtf8 password)
+    mhash <- liftIO $ hashPasswordUsingPolicy slowerBcryptHashingPolicy (DTE.encodeUtf8 password)
+    h <- maybe (fail "Password hashing error") return mhash
 
     let user = User uname (DTE.decodeUtf8 h) -- Write a failing test for this...
     newUserId <- withDb $ PE.insert user
@@ -143,32 +157,18 @@ api = do
 
   prehook (authenticated jwk) authApi
 
+authenticated :: JWK -> ActionCtxT () (WebStateM SqlBackend () ()) (Key User)
 authenticated jwk = do
-  auth <- header "Authentication"
-  token <- case auth of
-    Nothing -> fail "No authentication token"
-    Just t -> return $ T.tail $ snd $ breakOn t " "
+  auth <- header "Authorization"
+  mtoken <- maybe (fail "No authorization header") (return . stripPrefix "Bearer ") auth
+  token <- maybe (fail "Not bearer authorization") return mtoken
 
-  result <- runExceptT $ do
-    jwtData <- decodeCompact (encodeUtf8 $ fromStrict token)
-    validateJWSJWT defaultJWTValidationSettings jwk jwtData
-    return jwtData
+  jwtResult <- runExceptT $ validateToken jwk token
+  msub <- either (\(_ :: JWTError) -> fail "Error decoding or validating JWT") return jwtResult
+  sub <- maybe (fail "No sub in JWT") (return . getString) msub
+  maybe (fail "No username in sub... Must have been a URL?") (return . read . unpack) sub
 
-  jwtClaims <- case result of
-    Left (e :: JWTError) -> fail "Error decoding JWT"
-    Right jwt -> return $ jwtClaimsSet jwt
-
-  let msub = view claimSub jwtClaims
-
-  username <- case msub of
-    Nothing -> fail "No sub in JWT"
-    Just sub -> return $ getString sub
-
-  case username of
-    Nothing -> fail "No username in sub... Must have been a URL?"
-    Just u -> return u
-
-authApi :: SpockCtxM Text SqlBackend () () ()
+authApi :: SpockCtxM (Key User) SqlBackend () () ()
 authApi = do
   get ("app") $ do
     apps :: [Entity App] <- withDb $ PE.selectList [] []
@@ -193,7 +193,11 @@ authApi = do
 
   post ("app") $ do
     app <- App <$> param' "name" <*> param' "description"
-    newApp <- withDb $ PE.insert app
+    (userKey :: Key User) <- getContext
+    newApp <- withDb $ do
+              newApp <- PE.insert app
+              PE.insert $ AppAccess userKey newApp
+              return newApp
     json (newApp :: Key App)
 
   -- New command in a process, with optional result state
@@ -314,10 +318,10 @@ collapseChildren :: Eq a => [(a,Maybe b)] -> [(a,[b])]
 collapseChildren joined = map extractParent $ L.groupBy (F.on (==) fst) joined
     where extractParent all@((p,_):_) = (p, DM.catMaybes $ map snd all)
 
-makeClaims :: Text -> ClaimsSet
-makeClaims uname = emptyClaimsSet
+makeClaims :: Key User -> ClaimsSet
+makeClaims userId = emptyClaimsSet
   & claimIss .~ Just (fromString "https://app-guide.jmillikan.com/")
-  & claimSub .~ Just (fromString $ unpack uname) -- Why String though?
+  & claimSub .~ Just (fromString $ show userId)
   -- & claimExp .~ intDate "2011-03-22 18:43:00"
   -- & over unregisteredClaims (insert "http://example.com/is_root" (Bool True))
   -- & addClaim "http://example.com/is_root" (Bool True)

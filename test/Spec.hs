@@ -1,5 +1,8 @@
 {-# LANGUAGE OverloadedStrings, QuasiQuotes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Main (main) where
+
+import Data.ByteString.Lazy (toStrict)
 
 import Control.Monad.Logger
 import System.Directory
@@ -13,8 +16,17 @@ import Data.Aeson (Value(..), object, (.=))
 import Web.Spock (spockAsApp)
 import Web.Spock.Config
 
-import Lib (app)
-import Db (migrateAll)
+import Data.Monoid ((<>))
+
+import Lib (app, getJWK, makeJWT)
+import Db (migrateAll, User, Key)
+import Database.Persist.Sql (toSqlKey)
+import Crypto.JOSE.Error (Error)
+
+import Control.Monad.Except (runExceptT)
+
+import Network.HTTP.Types.Header
+import Network.HTTP.Types.Method
 
 main :: IO ()
 main = do
@@ -22,14 +34,25 @@ main = do
 
   SQ.runSqlite "test.db" $ SQ.runMigration migrateAll
 
+  mjwk <- getJWK
+  jwk <- maybe (fail "Can't start tests, no JWK") return mjwk
+
+  mjwt <- runExceptT $ makeJWT jwk (toSqlKey 1 :: Key User)
+
+  jwt <- either (\(e :: Error) -> fail "Failure making JWT for test user") return mjwt
+  
   -- Ideally this would recreate the DB each request
   runNoLoggingT $ SQ.withSqlitePool "test.db" 10 $ \pool -> 
-    NoLoggingT $ hspec $ spec (spockAsApp $ app pool)
+    NoLoggingT $ hspec $ spec (spockAsApp $ app pool) (toStrict jwt)
 
-spec wai = with wai $ do
+urlEncode = id
+formUrlEncodeQuery = foldr (\(k,v) s -> s <> "&" <> k <> "=" <> v) ""
+
+spec wai userToken = with wai $ do
   -- Scripty tests are not a spec and not ideal, but better than nothing
   -- test.db starts with 3 states, 5 commands, 1 process, and *should* auto-increment cleanly
-
+  runIO $ putStrLn $ "Token: " <> show userToken
+  
   describe "Users" $ do
     it "can be added" $ do
       postHtmlForm "/user"
@@ -51,11 +74,12 @@ spec wai = with wai $ do
 
   describe "States" $ do
     it "can be added" $ do
-      postHtmlForm "/state"
+      request methodPost "/state" [(hContentType, "application/x-www-form-urlencoded"), (hAuthorization, "Bearer " <> userToken)] (formUrlEncodeQuery
         [ ("appId", "1")
         , ("name", "Complete rotation")
         , ("description", "Set parameters for rotation of selected objects")
-        ] `shouldRespondWith` 200
+        ]) `shouldRespondWith` 200
+        
 
     it "can be found once added" $ get "/state/4" `shouldRespondWith` 200
 
