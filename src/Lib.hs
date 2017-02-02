@@ -78,8 +78,7 @@ getJWK :: IO (Maybe JWK)
 getJWK = decode <$> LS.readFile "app-guide.jwk"
 
 makeJWT
-  :: (Control.Monad.Error.Class.MonadError e m,
-      Crypto.JOSE.Error.AsError e,
+  :: (Control.Monad.Error.Class.MonadError Error m,
       Crypto.Random.Types.MonadRandom m) =>
      JWK -> Key User -> m LS.ByteString
 makeJWT jwk userKey = do
@@ -90,7 +89,7 @@ makeJWT jwk userKey = do
 validateToken jwk token = do
   jwtData <- decodeCompact (encodeUtf8 $ fromStrict token)
   validateJWSJWT defaultJWTValidationSettings jwk jwtData
-  return $ view claimSub $ jwtClaimsSet jwtData
+  return $ jwtClaimsSet jwtData
 -- End security stuff
 
 -- PE.get returns State, E.select returns Entity State.
@@ -110,37 +109,37 @@ withDb f = runQuery (\conn -> runSqlPersistM f conn)
 -- WAI application - bring your own pool
 app :: Pool SqlBackend -> IO Network.Wai.Middleware
 app pool = do
-  cfg <- defaultSpockCfg () (PCPool pool) ()
+  mjwk <- getJWK
+  jwk <- maybe (fail "Can't start application, no JWK") return mjwk
+
+  cfg <- defaultSpockCfg () (PCPool pool) jwk
   spock cfg api
 
-api :: SpockM SqlBackend () () ()
+api :: SpockM SqlBackend () JWK ()
 api = do
   c <- liftIO $ M.initCaching M.NoCaching
-
-  -- Works on my machine, what's the big deal?
-  mjwk <- liftIO getJWK
-  jwk <- maybe (fail "Can't start application, no JWK") return mjwk
 
   middleware $ M.staticPolicy' c $ M.addBase "frontend"
 
   get root $ file "text/html" "frontend/index.html"
 
-  unauthApi jwk
-  prehook (authenticated jwk) authApi
+  unauthApi
+  prehook authenticate authApi
 
-authenticated :: JWK -> ActionCtxT () (WebStateM SqlBackend () ()) (Key User)
-authenticated jwk = do
-  auth <- header "Authorization"
-  mtoken <- maybe (fail "No authorization header") (return . stripPrefix "Bearer ") auth
-  token <- maybe (fail "Not bearer authorization") return mtoken
+authenticate :: ActionCtxT () (WebStateM SqlBackend () JWK) (Key User)
+authenticate = do
+  header <- maybe (fail "No authorization header") return =<< header "Authorization"
+  token <- maybe (fail "Not bearer authorization") return (stripPrefix "Bearer " header)
 
-  jwtResult <- runExceptT $ validateToken jwk token
-  msub <- either (\(_ :: JWTError) -> fail "Error decoding or validating JWT") return jwtResult
-  sub <- maybe (fail "No sub in JWT") (return . getString) msub
-  maybe (fail "No username in sub... Must have been a URL?") (return . toSqlKey . read . unpack) sub
+  jwk <- getState
+  claims <- either (\(_ :: JWTError) -> fail "Error decoding or validating JWT") return
+          =<< runExceptT (validateToken jwk token)
+  sub <- maybe (fail "No sub in JWT") return (view claimSub claims)
+  subString <- maybe (fail "No string in sub") return (getString sub)
+  return $ toSqlKey $ read $ unpack subString
 
-unauthApi :: JWK -> SpockCtxM () SqlBackend () () ()
-unauthApi jwk = do
+unauthApi :: SpockCtxM () SqlBackend () JWK ()
+unauthApi = do
   post ("jwt") $ do
     (uname :: Text) <- param' "username"
     (password :: Text) <- param' "password"
@@ -154,12 +153,15 @@ unauthApi jwk = do
 
     let passHash = userPassword (entityVal user)
 
-    when (not $ validatePassword (DTE.encodeUtf8 passHash) (DTE.encodeUtf8 password)) authFail
+    when (not $ validatePassword (DTE.encodeUtf8 passHash) (DTE.encodeUtf8 password))
+      authFail
 
+    jwk <- getState
     result <- runExceptT $ makeJWT jwk (entityKey user)
 
     -- To lazy text via bytestring, I guess.
-    either (\(e :: Error) -> fail "Failure making JWT claims set") (json . decodeUtf8) result
+    jwt <- either (\(e :: Error) -> fail "Failure making JWT claims set") (return . decodeUtf8) result
+    json jwt
 
   post ("user") $ do
     (uname :: Text) <- param' "username"
@@ -176,7 +178,7 @@ unauthApi jwk = do
     
     json newUserId
 
-authApi :: SpockCtxM (Key User) SqlBackend () () ()
+authApi :: SpockCtxM (Key User) SqlBackend () JWK ()
 authApi = do
   get ("app") $ do
     apps :: [Entity App] <- withDb $ PE.selectList [] []
@@ -333,6 +335,8 @@ makeClaims userId = emptyClaimsSet
   -- & claimExp .~ intDate "2011-03-22 18:43:00"
   -- & over unregisteredClaims (insert "http://example.com/is_root" (Bool True))
   -- & addClaim "http://example.com/is_root" (Bool True)
+
+
 
 getProcessState :: StateId -> SqlPersistM (Maybe StateForProcess)
 getProcessState stateId = do
