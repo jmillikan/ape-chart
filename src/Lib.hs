@@ -104,8 +104,6 @@ runApp dbFilename portNum = do
   runNoLoggingT $ withSqlitePool (pack dbFilename) 10 $ \pool ->
     NoLoggingT $ runSpock portNum $ app pool
 
-withDb f = runQuery (\conn -> runSqlPersistM f conn)
-
 -- WAI application - bring your own pool
 app :: Pool SqlBackend -> IO Network.Wai.Middleware
 app pool = do
@@ -178,17 +176,23 @@ unauthApi = do
     
     json newUserId
 
+getUserKey :: ActionCtxT (Key User) (WebStateM SqlBackend () JWK) (Key User)
+getUserKey = getContext
+
+-- Run a SQL action from pool
+withDb f = runQuery (\conn -> runSqlPersistM f conn)
+
+-- Run a SQL action that uses key for authorization
+authSql f = withDb . f =<< getUserKey
+
 authApi :: SpockCtxM (Key User) SqlBackend () JWK ()
 authApi = do
-  get ("app") $ do
-    apps :: [Entity App] <- withDb $ PE.selectList [] []
-    json apps
+  get ("app") $ json =<< authSql getUserApps
 
-  get ("app" <//> var) $ \appId -> do
-    app :: Maybe App <- withDb $ PE.get (toSqlKey appId)
-    json app
+  get ("app" <//> var) $ \appId -> json =<< authSql (getUserApp $ toSqlKey appId)
 
   delete ("app" <//> var) $ \appId -> do
+    authSql $ getUserApp $ toSqlKey appId
     withDb $ PE.delete (toSqlKey appId :: Key App)
     json appId
 
@@ -336,7 +340,22 @@ makeClaims userId = emptyClaimsSet
   -- & over unregisteredClaims (insert "http://example.com/is_root" (Bool True))
   -- & addClaim "http://example.com/is_root" (Bool True)
 
+getUserApps userKey =
+  E.select $ from $ \((a :: SqlExpr (Entity App)) `InnerJoin` (aa :: SqlExpr (Entity AppAccess))) -> do
+        on $ (a ^. AppId) ==. (aa ^. AppAccessAppId)
+        where_ $ aa ^. AppAccessUserId ==. val userKey
+        return a
 
+-- Unchecked exception
+getUserApp appKey userKey = do
+  apps <- E.select $ from $ \((a :: SqlExpr (Entity App)) `InnerJoin` (aa :: SqlExpr (Entity AppAccess))) -> do
+        on $ (a ^. AppId) ==. (aa ^. AppAccessAppId)
+        where_ $ aa ^. AppAccessUserId ==. val userKey &&. a ^. AppId ==. val appKey
+        return a
+
+  case apps of
+    [a] -> return a
+    _ -> fail "No access to app or app does not exist"
 
 getProcessState :: StateId -> SqlPersistM (Maybe StateForProcess)
 getProcessState stateId = do
