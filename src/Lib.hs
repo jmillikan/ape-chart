@@ -87,6 +87,14 @@ makeJWT jwk userKey = do
   let header = newJWSHeader (Protected, alg)
   createJWSJWT jwk header (makeClaims $ userKey) >>= encodeCompact
 
+makeClaims :: Key User -> ClaimsSet
+makeClaims userId = emptyClaimsSet
+  & claimIss .~ Just (fromString "https://localhost/")
+  & claimSub .~ Just (fromString $ show $ fromSqlKey userId)
+  -- & claimExp .~ intDate "2011-03-22 18:43:00"
+  -- & over unregisteredClaims (insert "http://example.com/is_root" (Bool True))
+  -- & addClaim "http://example.com/is_root" (Bool True)
+
 validateToken jwk token = do
   jwtData <- decodeCompact (encodeUtf8 $ fromStrict token)
   validateJWSJWT defaultJWTValidationSettings jwk jwtData
@@ -225,37 +233,49 @@ appAccess appKey f = do
 
 authApi :: SpockCtxM (Key User) SqlBackend () JWK ()
 authApi = do
-  get ("app") $ json =<< withDb . getUserApps =<< getUserKey
+  post ("app") $ do
+    app <- App <$> param' "name" <*> param' "description"
+    userKey <- getContext
+    newApp <- withDb $ do
+      newApp <- PE.insert app
+      PE.insert $ AppAccess userKey newApp
+      return newApp
+    json newApp
 
-  get ("app" <//> var) $ \appId -> do
-    let appKey = toSqlKey appId :: Key App
+  get ("app" <//> var) $ \(appKey :: Key App) -> do
     appAccess appKey $ do
       json =<< withDb (PE.get appKey)
 
-  delete ("app" <//> var) $ \appId ->
-    appAccess (toSqlKey appId :: Key App) $ do
-      withDb $ PE.delete (toSqlKey appId :: Key App)
-      json appId
+  get ("app") $ json =<< withDb . getUserApps =<< getUserKey
 
-  -- Some of these are shaped like REST endpoints but really aren't
-  get ("state" <//> var) $ \stateId -> do
-    appAccess (toSqlKey stateId :: Key State) $ do
-      state <- withDb $ getProcessState (toSqlKey stateId)
-      maybe (setStatus notFound404) json state
+  delete ("app" <//> var) $ \(appKey :: Key App) ->
+    appAccess appKey $ do
+      withDb $ PE.delete appKey
+      json appKey
 
-  get ("app" <//> var <//> "state") $ \appId -> do
-    appAccess (toSqlKey appId :: Key App) $ do
-      states <- withDb $ PE.selectList [StateAppId PE.==. toSqlKey appId] []
+  get ("app" <//> var <//> "state") $ \(appKey :: Key App) -> do
+    appAccess appKey $ do
+      states <- withDb $ PE.selectList [StateAppId PE.==. appKey] []
       json states
 
-  post ("app") $ do
-    app <- App <$> param' "name" <*> param' "description"
-    (userKey :: Key User) <- getContext
-    newApp <- withDb $ do
-              newApp <- PE.insert app
-              PE.insert $ AppAccess userKey newApp
-              return newApp
-    json (newApp :: Key App)
+  get ("state" <//> var) $ \(stateKey :: Key State) -> do
+    appAccess stateKey $ do
+      state <- withDb $ getProcessState stateKey
+      maybe (setStatus notFound404) json state
+
+  get ("app" <//> var <//> "process") $ \(appKey :: Key App) -> do
+    appAccess appKey $ do
+      processes <- withDb $ E.select $ from $ \p -> do
+        where_ $ p ^. ProcessAppId ==. val appKey
+        return p
+      json processes
+
+  post ("app" <//> var <//> "process") $ \(appKey :: Key App) -> do
+    appAccess appKey $ do
+      process <- Process appKey <$> param' "name" <*> param' "description"
+      (Just app) <- withDb $ PE.get appKey
+      processId <- withDb $ PE.insert process
+      json $ fromSqlKey processId
 
   -- New command in a process, with optional result state
   post ("state" <//> var <//> "process" <//> var <//> "command") $ \stateId processId -> do
@@ -300,12 +320,6 @@ authApi = do
     cp <- withDb $ deleteBy $ UniqueCommandProcess (toSqlKey processId) (toSqlKey commandId)
     json (commandId, processId)
 
-  get ("app" <//> var <//> "process") $ \appId -> do
-    processes <- withDb $ E.select $ from $ \p -> do
-      where_ $ p ^. ProcessAppId ==. val appId
-      return p
-    json processes
-
   -- Some blanket add & fetch endpoints
   -- For testing porpoises >_<
   get ("command" <//> var) $ \commandId -> do
@@ -316,13 +330,6 @@ authApi = do
     state <- State <$> param' "appId" <*> param' "name" <*> param' "description"
     stateId <- withDb $ PE.insert state
     json $ fromSqlKey stateId
-
-  post ("app" <//> var <//> "process") $ \appId -> do
-    let appKey = toSqlKey appId
-    process <- Process appKey <$> param' "name" <*> param' "description"
-    (Just app) <- withDb $ PE.get appKey
-    processId <- withDb $ PE.insert process
-    json $ fromSqlKey processId
 
   -- Update command...
   post ("command" <//> var) $ \commandIdRaw -> do
@@ -365,14 +372,6 @@ authApi = do
 collapseChildren :: Eq a => [(a,Maybe b)] -> [(a,[b])]
 collapseChildren joined = map extractParent $ L.groupBy (F.on (==) fst) joined
     where extractParent all@((p,_):_) = (p, DM.catMaybes $ map snd all)
-
-makeClaims :: Key User -> ClaimsSet
-makeClaims userId = emptyClaimsSet
-  & claimIss .~ Just (fromString "https://localhost/")
-  & claimSub .~ Just (fromString $ show $ fromSqlKey userId)
-  -- & claimExp .~ intDate "2011-03-22 18:43:00"
-  -- & over unregisteredClaims (insert "http://example.com/is_root" (Bool True))
-  -- & addClaim "http://example.com/is_root" (Bool True)
 
 getUserApps :: Key User -> SqlPersistM [Entity App]
 getUserApps userKey =

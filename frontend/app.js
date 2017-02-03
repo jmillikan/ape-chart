@@ -292,24 +292,24 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', '$q', ($http, $tim
     return {
 	networkState: networkState,
 	getJwt: (username, password) => httpData($http.post('/jwt', {username, password})),
+        addApp: (name, description) =>
+	    httpData($http.post('/app', {name: name, description: description}, {})),
         getApps: (callback) =>
 	    httpData(qBackoff(() => $http.get('/app'))),
         getApp: (appId) =>
 	    httpData(qBackoff(() => $http.get('/app/' + appId))),
 	deleteApp: (appId) =>
 	    httpData($http.delete('/app/' + appId)),
-        addApp: (name, description) =>
-	    httpData($http.post('/app', {name: name, description: description}, {})),
         getStates: (appId, callback) =>
             httpData(qBackoff(() => $http.get('/app/' + appId + '/state/'))),
+        getStateDetails: (stateId, callback) =>
+	    httpData(qBackoff(() => $http.get('/state/' + stateId))),
         getProcesses: (appId) => 
             httpData(qBackoff(() => $http.get('/app/' + appId + '/process'))),
 	addProcess: (appId, name, description) =>
 	    httpData($http.post('/app/' + appId + '/process', {name, description})),
         addState: (appId, name, description) =>
             httpData($http.post('/state', {name, description, appId}, {})),
-        getStateDetails: (stateId, callback) =>
-	    httpData(qBackoff(() => $http.get('/state/' + stateId))),
         addCommand: (stateId, processId, command) => 
             httpData($http.post('/state/' + stateId + '/process/' + (processId ? processId : -1) + '/command', 
 				command, {})),

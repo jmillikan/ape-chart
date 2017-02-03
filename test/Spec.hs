@@ -85,21 +85,27 @@ spec wai userToken userToken2 = with wai $ do
         ] `shouldRespondWith` 200
 
   describe "States" $ do
-    it "can be added" $ do
-      let a = do
-              r <- postFormWithJWT "/state" userToken
-                [ ("appId", "1")
-                , ("name", "Complete rotation")
-                , ("description", "Set parameters for rotation of selected objects")
-                ]
-              return r
-      a `shouldRespondWith` 200
+    it "can be listed per app" $ getWithJWT "/app/1/state" userToken `shouldRespondWith` 200
+
+    it "cannot be listed without app access" $ getWithJWT "/app/1/state" userToken2 `shouldRespondWith` 403
+    
+    it "can be added" $ postFormWithJWT "/state" userToken
+      [ ("appId", "1")
+      , ("name", "Complete rotation")
+      , ("description", "Set parameters for rotation of selected objects")
+      ] `shouldRespondWith` 200
 
     it "can be found once added" $ getWithJWT "/state/4" userToken `shouldRespondWith` 200
 
     it "cannot be viewed by users without access" $ getWithJWT "/state/4" userToken2 `shouldRespondWith` 403
 
     it "403 if they don't exist" $ getWithJWT "/state/5" userToken `shouldRespondWith` 403
+
+    it "cannot be added without app access" $ postFormWithJWT "/state" userToken2
+      [ ("appId", "1")
+      , ("name", "Bad state")
+      , ("description", "Bad state desc")
+      ] `shouldRespondWith` 200
 
   describe "Commands" $ do
     it "can be added in a process" $ do
@@ -128,6 +134,9 @@ spec wai userToken userToken2 = with wai $ do
         , ("description", "ASP.NET MVC Web Framework in the Rails style")
         ] `shouldRespondWith` 200
 
+    -- SCRIPTINESS ALERT
+    -- Assume new app was added and has ID 3
+
     it "will not be listed for users without access"  $ getWithJWT "/app" userToken2 `shouldRespondWith` "[]"
 
     it "Can be found once added" $ getWithJWT "/app/2" userToken `shouldRespondWith` 200
@@ -138,6 +147,9 @@ spec wai userToken userToken2 = with wai $ do
 
     -- This set of tests is extremely scripty. I consider that better than being 200 lines long, but geez.
     it "Cannot be deleted without access" $ deleteWithJWT "/app/2" userToken2 `shouldRespondWith` 403
+
+    -- SCRIPTINESS ALERT
+    -- Assume app was not just deleted by above
 
     it "can be deleted" $ deleteWithJWT "/app/2" userToken `shouldRespondWith` 200
 
@@ -153,3 +165,10 @@ spec wai userToken userToken2 = with wai $ do
     it "Can be found once added (BRITTLE)" $ getWithJWT "/app/1/process" userToken `shouldRespondWith` jsonBody [json|[{"appId":1,"name":"Basic 3D","id":1,"description":"Simple 3D Scene and model editing"},{"appId":1,"name":"UV Mapping","id":2,"description":"Map points on mesh to points on ..."}]|]
 
     it "Cannot be viewed by users without access" $ getWithJWT "/app/1/process" userToken2 `shouldRespondWith` 403
+
+    it "cannot be added without app access" $ do
+      postFormWithJWT "/app/1/process" userToken2
+                   [("name", "Bad process")
+                   ,("description", "<...>")
+                   ] `shouldRespondWith` 403
+
