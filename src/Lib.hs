@@ -183,23 +183,18 @@ getUserKey = getContext
 -- Run a SQL action from pool
 withDb f = runQuery (\conn -> runSqlPersistM f conn)
 
--- authSql and authJson are old, get rid of them...
-authSql f = withDb . f =<< getUserKey
-
-authJson f = maybe (setStatus status403) json =<< authSql f
-
 class AccessCheck a where
   accessCheck :: a -> Key User -> SqlPersistM Bool
 
 -- Not only will these checks not be atomic with the actual action,
--- the pair checks aren't even atomic with each other.
+-- the pair checks aren't even atomic with each other
   
 instance AccessCheck (Key App) where
   accessCheck appKey userKey = do
     apps <- E.select $ from $ \((a :: SqlExpr (Entity App)) `InnerJoin` (aa :: SqlExpr (Entity AppAccess))) -> do
       on $ (a ^. AppId) ==. (aa ^. AppAccessAppId)
       where_ $ aa ^. AppAccessUserId ==. val userKey &&. a ^. AppId ==. val appKey
-      return ()
+      return (a ^. AppId)
 
     return $ length apps /= 0
 
@@ -213,7 +208,7 @@ instance AccessCheck (Key State) where
       on $ (a ^. AppId) ==. (aa ^. AppAccessAppId)
       on $ (s ^. StateAppId) ==. (a ^. AppId)
       where_ $ aa ^. AppAccessUserId ==. val userKey &&. s ^. StateId ==. val stateKey
-      return ()
+      return (a ^. AppId)
 
     return $ length apps /= 0
 
@@ -225,16 +220,17 @@ appAccess appKey f = do
   access <- withDb $ accessCheck appKey userKey
   
   if access
-    then f
-    else setStatus status403
+    then do { liftIO $ putStrLn "Running action"; f }
+    else do { liftIO $ putStrLn "Setting status 403"; setStatus status403 }
 
 authApi :: SpockCtxM (Key User) SqlBackend () JWK ()
 authApi = do
-  get ("app") $ json =<< authSql getUserApps
+  get ("app") $ json =<< withDb . getUserApps =<< getUserKey
 
   get ("app" <//> var) $ \appId -> do
-    appAccess (toSqlKey appId :: Key App) $
-       json =<< authSql (getUserApp $ toSqlKey appId) -- In this one case, appAccess is redundant
+    let appKey = toSqlKey appId :: Key App
+    appAccess appKey $ do
+      json =<< withDb (PE.get appKey)
 
   delete ("app" <//> var) $ \appId ->
     appAccess (toSqlKey appId :: Key App) $ do
@@ -248,8 +244,9 @@ authApi = do
       maybe (setStatus notFound404) json state
 
   get ("app" <//> var <//> "state") $ \appId -> do
-    states <- withDb $ PE.selectList [StateAppId PE.==. appId] []
-    json states
+    appAccess (toSqlKey appId :: Key App) $ do
+      states <- withDb $ PE.selectList [StateAppId PE.==. toSqlKey appId] []
+      json states
 
   post ("app") $ do
     app <- App <$> param' "name" <*> param' "description"
@@ -315,19 +312,10 @@ authApi = do
     (command :: Maybe Command) <- withDb (PE.get $ toSqlKey commandId)
     maybe (setStatus notFound404) json command
 
-  get ("app" <//> var) $ \appId -> do
-    (command :: Maybe App) <- withDb (PE.get $ toSqlKey appId)
-    maybe (setStatus notFound404) json command
-
   post ("state") $ do
     state <- State <$> param' "appId" <*> param' "name" <*> param' "description"
     stateId <- withDb $ PE.insert state
     json $ fromSqlKey stateId
-
-  post ("app") $ do
-    app <- App <$> param' "name" <*> param' "description"
-    appId <- withDb $ PE.insert app
-    json $ fromSqlKey appId
 
   post ("app" <//> var <//> "process") $ \appId -> do
     let appKey = toSqlKey appId
@@ -392,18 +380,6 @@ getUserApps userKey =
         on $ (a ^. AppId) ==. (aa ^. AppAccessAppId)
         where_ $ aa ^. AppAccessUserId ==. val userKey
         return a
-
--- Unchecked exception, rewrite to PE.get
-getUserApp :: Key App -> Key User -> SqlPersistM (Entity App)
-getUserApp appKey userKey = do
-  apps <- E.select $ from $ \((a :: SqlExpr (Entity App)) `InnerJoin` (aa :: SqlExpr (Entity AppAccess))) -> do
-        on $ (a ^. AppId) ==. (aa ^. AppAccessAppId)
-        where_ $ aa ^. AppAccessUserId ==. val userKey &&. a ^. AppId ==. val appKey
-        return a
-
-  case apps of
-    [a] -> return a
-    _ -> fail "Tried to access an app that doesn't exist"
 
 getProcessState :: StateId -> SqlPersistM (Maybe StateForProcess)
 getProcessState stateId = do

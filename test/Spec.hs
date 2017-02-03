@@ -120,25 +120,28 @@ spec wai userToken userToken2 = with wai $ do
     it "403 if they don't exist" $ getWithJWT "/command/7" userToken `shouldRespondWith` 403
 
   describe "Apps" $ do
+    it "can be listed"  $ getWithJWT "/app" userToken `shouldRespondWith` jsonBody [json|[{"name":"Blender 2.72","id":1,"description":"Full featured 3D modeling and animation program"}]|]
+
     it "Can be added" $ do
       postFormWithJWT "/app" userToken
         [ ("name", "ASP.NET MVC")
         , ("description", "ASP.NET MVC Web Framework in the Rails style")
         ] `shouldRespondWith` 200
 
-    it "Cannot be deleted without access" $ deleteWithJWT "/app/2" userToken2 `shouldRespondWith` 403
-
-    it "can be deleted" $ deleteWithJWT "/app/2" userToken `shouldRespondWith` 403
-
-    it "can be listed"  $ getWithJWT "/app" userToken `shouldRespondWith` jsonBody [json|[{"name":"Blender 2.72","id":1,"description":"Full featured 3D modeling and animation program"}]|]
-
     it "will not be listed for users without access"  $ getWithJWT "/app" userToken2 `shouldRespondWith` "[]"
 
     it "Can be found once added" $ getWithJWT "/app/2" userToken `shouldRespondWith` 200
 
+    it "403 if they don't exist" $ getWithJWT "/app/3" userToken `shouldRespondWith` 403
+
     it "Cannot be viewed by users without access" $ getWithJWT "/app/2" userToken2 `shouldRespondWith` 403
 
-    it "403 if they don't exist" $ getWithJWT "/app/3" userToken `shouldRespondWith` 403
+    -- This set of tests is extremely scripty. I consider that better than being 200 lines long, but geez.
+    it "Cannot be deleted without access" $ deleteWithJWT "/app/2" userToken2 `shouldRespondWith` 403
+
+    it "can be deleted" $ deleteWithJWT "/app/2" userToken `shouldRespondWith` 200
+
+    it "cannot be found once deleted" $ getWithJWT "/app/2" userToken `shouldRespondWith` 403
 
   describe "Process" $ do
     it "Can be added" $ do
