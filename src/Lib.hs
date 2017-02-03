@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -182,24 +183,69 @@ getUserKey = getContext
 -- Run a SQL action from pool
 withDb f = runQuery (\conn -> runSqlPersistM f conn)
 
--- Run a SQL action that uses key for authorization
+-- authSql and authJson are old, get rid of them...
 authSql f = withDb . f =<< getUserKey
+
+authJson f = maybe (setStatus status403) json =<< authSql f
+
+class AccessCheck a where
+  accessCheck :: a -> Key User -> SqlPersistM Bool
+
+-- Not only will these checks not be atomic with the actual action,
+-- the pair checks aren't even atomic with each other.
+  
+instance AccessCheck (Key App) where
+  accessCheck appKey userKey = do
+    apps <- E.select $ from $ \((a :: SqlExpr (Entity App)) `InnerJoin` (aa :: SqlExpr (Entity AppAccess))) -> do
+      on $ (a ^. AppId) ==. (aa ^. AppAccessAppId)
+      where_ $ aa ^. AppAccessUserId ==. val userKey &&. a ^. AppId ==. val appKey
+      return ()
+
+    return $ length apps /= 0
+
+instance (AccessCheck a, AccessCheck b) => AccessCheck (a,b) where
+  accessCheck (keyA, keyB) userKey =
+    (&&) <$> accessCheck keyA userKey <*> accessCheck keyB userKey
+
+instance AccessCheck (Key State) where
+  accessCheck stateKey userKey = do
+    apps <- E.select $ from $ \((s :: SqlExpr (Entity State)) `InnerJoin` (a :: SqlExpr (Entity App)) `InnerJoin` (aa :: SqlExpr (Entity AppAccess))) -> do
+      on $ (a ^. AppId) ==. (aa ^. AppAccessAppId)
+      on $ (s ^. StateAppId) ==. (a ^. AppId)
+      where_ $ aa ^. AppAccessUserId ==. val userKey &&. s ^. StateId ==. val stateKey
+      return ()
+
+    return $ length apps /= 0
+
+appAccess :: AccessCheck a => a -> ActionCtxT (Key User) (WebStateM SqlBackend () JWK) ()
+     -> ActionCtxT (Key User) (WebStateM SqlBackend () JWK) ()
+appAccess appKey f = do
+  userKey <- getUserKey
+
+  access <- withDb $ accessCheck appKey userKey
+  
+  if access
+    then f
+    else setStatus status403
 
 authApi :: SpockCtxM (Key User) SqlBackend () JWK ()
 authApi = do
   get ("app") $ json =<< authSql getUserApps
 
-  get ("app" <//> var) $ \appId -> json =<< authSql (getUserApp $ toSqlKey appId)
+  get ("app" <//> var) $ \appId -> do
+    appAccess (toSqlKey appId :: Key App) $
+       json =<< authSql (getUserApp $ toSqlKey appId) -- In this one case, appAccess is redundant
 
-  delete ("app" <//> var) $ \appId -> do
-    authSql $ getUserApp $ toSqlKey appId
-    withDb $ PE.delete (toSqlKey appId :: Key App)
-    json appId
+  delete ("app" <//> var) $ \appId ->
+    appAccess (toSqlKey appId :: Key App) $ do
+      withDb $ PE.delete (toSqlKey appId :: Key App)
+      json appId
 
   -- Some of these are shaped like REST endpoints but really aren't
   get ("state" <//> var) $ \stateId -> do
-    state <- withDb $ getProcessState (toSqlKey stateId)
-    maybe (setStatus notFound404) json state
+    appAccess (toSqlKey stateId :: Key State) $ do
+      state <- withDb $ getProcessState (toSqlKey stateId)
+      maybe (setStatus notFound404) json state
 
   get ("app" <//> var <//> "state") $ \appId -> do
     states <- withDb $ PE.selectList [StateAppId PE.==. appId] []
@@ -340,13 +386,15 @@ makeClaims userId = emptyClaimsSet
   -- & over unregisteredClaims (insert "http://example.com/is_root" (Bool True))
   -- & addClaim "http://example.com/is_root" (Bool True)
 
+getUserApps :: Key User -> SqlPersistM [Entity App]
 getUserApps userKey =
   E.select $ from $ \((a :: SqlExpr (Entity App)) `InnerJoin` (aa :: SqlExpr (Entity AppAccess))) -> do
         on $ (a ^. AppId) ==. (aa ^. AppAccessAppId)
         where_ $ aa ^. AppAccessUserId ==. val userKey
         return a
 
--- Unchecked exception
+-- Unchecked exception, rewrite to PE.get
+getUserApp :: Key App -> Key User -> SqlPersistM (Entity App)
 getUserApp appKey userKey = do
   apps <- E.select $ from $ \((a :: SqlExpr (Entity App)) `InnerJoin` (aa :: SqlExpr (Entity AppAccess))) -> do
         on $ (a ^. AppId) ==. (aa ^. AppAccessAppId)
@@ -355,7 +403,7 @@ getUserApp appKey userKey = do
 
   case apps of
     [a] -> return a
-    _ -> fail "No access to app or app does not exist"
+    _ -> fail "Tried to access an app that doesn't exist"
 
 getProcessState :: StateId -> SqlPersistM (Maybe StateForProcess)
 getProcessState stateId = do

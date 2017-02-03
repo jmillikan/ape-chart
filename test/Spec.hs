@@ -97,9 +97,9 @@ spec wai userToken userToken2 = with wai $ do
 
     it "can be found once added" $ getWithJWT "/state/4" userToken `shouldRespondWith` 200
 
-    it "cannot be viewed by users without access" $ getWithJWT "/state/4" userToken2 `shouldRespondWith` 500
+    it "cannot be viewed by users without access" $ getWithJWT "/state/4" userToken2 `shouldRespondWith` 403
 
-    it "404 if they don't exist" $ getWithJWT "/state/5" userToken `shouldRespondWith` 404
+    it "403 if they don't exist" $ getWithJWT "/state/5" userToken `shouldRespondWith` 403
 
   describe "Commands" $ do
     it "can be added in a process" $ do
@@ -113,11 +113,11 @@ spec wai userToken userToken2 = with wai $ do
 
     it "can be found once added" $ getWithJWT "/command/6" userToken `shouldRespondWith` 200
 
-    it "cannot be viewed by users without access" $ getWithJWT "/command/6" userToken2 `shouldRespondWith` 500
+    it "cannot be viewed by users without access" $ getWithJWT "/command/6" userToken2 `shouldRespondWith` 403
 
     it "can be seen in the source state (BRITTLE)" $ getWithJWT "/state/1" userToken `shouldRespondWith` jsonBody [json|{"commands":[{"methodType":"keyboard-emacs","resultStateId":2,"process":[{"processId":1,"commandId":1,"id":1,"notes":"Switch modes"}],"method":"TAB","stateId":1,"id":1,"description":"Switch to Edit Mode"},{"methodType":"keyboard-emacs","resultStateId":3,"process":[{"processId":1,"commandId":2,"id":2,"notes":"For positioning objects"}],"method":"g","stateId":1,"id":2,"description":"Grab"},{"methodType":"keyboard-emacs","resultStateId":4,"process":[{"processId":1,"commandId":6,"id":4,"notes":"In basic situations, you will frequently need the axis modifiers x/y/z."}],"method":"r","stateId":1,"id":6,"description":"Rotate selection"}],"appId":1,"name":"Object Mode","includes":[],"id":1,"description":"Object Mode with 3D View acive"}|]
 
-    it "404 if they don't exist" $ getWithJWT "/command/7" userToken `shouldRespondWith` 404
+    it "403 if they don't exist" $ getWithJWT "/command/7" userToken `shouldRespondWith` 403
 
   describe "Apps" $ do
     it "Can be added" $ do
@@ -126,9 +126,9 @@ spec wai userToken userToken2 = with wai $ do
         , ("description", "ASP.NET MVC Web Framework in the Rails style")
         ] `shouldRespondWith` 200
 
-    it "Cannot be deleted without access" $ deleteWithJWT "/app/2" userToken2 `shouldRespondWith` 500
+    it "Cannot be deleted without access" $ deleteWithJWT "/app/2" userToken2 `shouldRespondWith` 403
 
-    it "can be deleted" $ deleteWithJWT "/app/2" userToken `shouldRespondWith` 500
+    it "can be deleted" $ deleteWithJWT "/app/2" userToken `shouldRespondWith` 403
 
     it "can be listed"  $ getWithJWT "/app" userToken `shouldRespondWith` jsonBody [json|[{"name":"Blender 2.72","id":1,"description":"Full featured 3D modeling and animation program"}]|]
 
@@ -136,9 +136,9 @@ spec wai userToken userToken2 = with wai $ do
 
     it "Can be found once added" $ getWithJWT "/app/2" userToken `shouldRespondWith` 200
 
-    it "Cannot be viewed by users without access" $ getWithJWT "/app/2" userToken2 `shouldRespondWith` 500
+    it "Cannot be viewed by users without access" $ getWithJWT "/app/2" userToken2 `shouldRespondWith` 403
 
-    it "404 if they don't exist" $ getWithJWT "/app/3" userToken `shouldRespondWith` 404
+    it "403 if they don't exist" $ getWithJWT "/app/3" userToken `shouldRespondWith` 403
 
   describe "Process" $ do
     it "Can be added" $ do
@@ -149,4 +149,4 @@ spec wai userToken userToken2 = with wai $ do
 
     it "Can be found once added (BRITTLE)" $ getWithJWT "/app/1/process" userToken `shouldRespondWith` jsonBody [json|[{"appId":1,"name":"Basic 3D","id":1,"description":"Simple 3D Scene and model editing"},{"appId":1,"name":"UV Mapping","id":2,"description":"Map points on mesh to points on ..."}]|]
 
-    it "Cannot be viewed by users without access" $ getWithJWT "/app/1/process" userToken2 `shouldRespondWith` 500
+    it "Cannot be viewed by users without access" $ getWithJWT "/app/1/process" userToken2 `shouldRespondWith` 403
