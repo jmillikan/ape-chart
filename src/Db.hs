@@ -10,7 +10,7 @@ import Database.Persist
 import qualified Data.Text as T
 import Data.Aeson
 
-share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
+share [mkPersist sqlSettings, mkDeleteCascade sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
 User json
   username T.Text
   password T.Text
@@ -48,6 +48,7 @@ CommandProcess json
   commandId CommandId
   notes T.Text
   UniqueCommandProcess processId commandId
+  deriving Show
 -- StateProcess json
 --   processId ProcessId
 --   stateId StateId

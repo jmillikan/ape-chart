@@ -62,7 +62,7 @@ import Crypto.BCrypt
 import Control.Monad.Except (runExceptT)
 
 -- These four identifiers are the subject of collisions *and* confusion...
-import qualified Database.Persist as PE (get, update, insert, delete, selectList, selectFirst, (==.)) 
+import qualified Database.Persist as PE (get, update, insert, delete, deleteCascade, selectList, selectFirst, (==.)) 
 import qualified Database.Esqueleto as E (select)
 import Database.Persist ((=.))
 import Database.Persist.Sql (fromSqlKey)
@@ -110,7 +110,10 @@ runApp :: FilePath -> Int -> IO ()
 runApp dbFilename portNum = do
   runSqlite (pack dbFilename) $ runMigration migrateAll
 
-  runNoLoggingT $ withSqlitePool (pack dbFilename) 10 $ \pool ->
+  -- FOREIGN KEY pragma is OFF.
+  -- For turning it ion, see https://github.com/yesodweb/yesod/wiki/Activate-foreign-key-checking-in-Sqlite
+  -- 
+  runNoLoggingT $ withSqlitePool (pack dbFilename) 1 $ \pool ->
     NoLoggingT $ runSpock portNum $ app pool
 
 -- WAI application - bring your own pool
@@ -271,7 +274,8 @@ authApi = do
 
   delete ("app" <//> var) $ \(appKey :: Key App) ->
     appAccess appKey $ do
-      withDb $ PE.delete appKey
+      -- TODO: Delete orphaned rows...
+      withDb $ PE.deleteCascade appKey
       json appKey
 
   get ("app" <//> var <//> "state") $ \(appKey :: Key App) -> do
@@ -305,7 +309,7 @@ authApi = do
       json $ fromSqlKey processId
 
   -- New command in a process, with optional result state
-  post ("state" <//> var <//> "process" <//> var <//> "command") $ \stateId processId -> do
+  post ("state" <//> var <//> "process" <//> var <//> "command") $ \stateId (processId :: Key Process) -> do
     appAccess (stateId, processId) $ do
       Just s :: Maybe State <- withDb $ PE.get stateId -- State exists?
     
@@ -322,8 +326,12 @@ authApi = do
            
       commandId <- withDb $ do -- Transaction???
         resultStateKey <- getResultState
+        --liftIO $ putStrLn $ show $ command (Just resultStateKey)
         cid <- PE.insert $ command (Just resultStateKey)
-        when (fromSqlKey processId > 0) $ -- This needs to be designed back out by splitting the endpoint...
+        when (fromSqlKey processId > 0) $ do -- This needs to be designed back out by splitting the endpoint...
+          --liftIO $ putStrLn $ show $ CommandProcess processId cid note
+          liftIO $ putStrLn $ "New command ID: " ++ show (fromSqlKey cid)
+          liftIO $ putStrLn $ "Process ID for command: " ++ show (fromSqlKey processId)
           void $ PE.insert $ CommandProcess processId cid note
         return cid
       json $ fromSqlKey commandId
@@ -343,56 +351,60 @@ authApi = do
   -- Delete command
   delete ("command" <//> var) $ \(commandId :: Key Command) -> do
     appAccess commandId $ do
-      c <- withDb $ PE.delete commandId
+      -- Delete command and commandprocess
+      c <- withDb $ PE.deleteCascade commandId 
       json commandId
 
   -- Remove command from process
   delete ("command" <//> var <//> "process" <//> var) $ \commandId processId -> do
-    cp <- withDb $ deleteBy $ UniqueCommandProcess processId commandId
-    json (commandId, processId)
+    appAccess (commandId, processId) $ do
+      cp <- withDb $ deleteBy $ UniqueCommandProcess processId commandId
+      json (commandId, processId)
 
+  -- These endpoints are unused from the frontend
 
-  -- These endpoints are unused from the fronted. 
+  -- Add or change command-in-process
+  -- Tested
+  post ("command" <//> var <//> "process" <//> var) $ \commandId processId -> do
+    appAccess (commandId, processId) $ do
+      note <- param' "note"
+
+      withDb $ do
+        found <- E.select $ from $ \cp -> do
+          where_ (cp ^. CommandProcessCommandId ==. val commandId &&. 
+                  cp ^. CommandProcessProcessId ==. val processId)
+          return cp
+
+        case found of
+          [cp] -> do
+            PE.update (entityKey cp) [ CommandProcessNotes =. note ]
+            return ()
+          [] -> do
+            PE.insert $ CommandProcess processId commandId note
+            return ()
 
   -- For testing porpoises >_<
   get ("command" <//> var) $ \commandId -> do
-    (command :: Maybe Command) <- withDb (PE.get $ toSqlKey commandId)
-    maybe (setStatus notFound404) json command
+    appAccess commandId $ do
+      (command :: Maybe Command) <- withDb (PE.get commandId)
+      -- appAccess should 403 away non-existent rows used for authorization...
+      maybe (fail "Non-existent command - shouldn't happen") json command
 
   -- Update command...
-  post ("command" <//> var) $ \commandIdRaw -> do
-    methodType <- param' "methodType"
-    method <- param' "method"
-    desc <- param' "desc"
-    resultStateId <- param "resultStateId"
+  -- post ("command" <//> var) $ \commandIdRaw -> do
+  --   methodType <- param' "methodType"
+  --   method <- param' "method"
+  --   desc <- param' "desc"
+  --   resultStateId <- param "resultStateId"
 
-    withDb $ PE.update (toSqlKey commandIdRaw)
-      [ CommandResultStateId =. toSqlKey <$> read <$> resultStateId
-      , CommandMethodType =. methodType
-      , CommandMethod =. method
-      , CommandDescription =. desc 
-      ]
+  --   withDb $ PE.update (toSqlKey commandIdRaw)
+  --     [ CommandResultStateId =. toSqlKey <$> read <$> resultStateId
+  --     , CommandMethodType =. methodType
+  --     , CommandMethod =. method
+  --     , CommandDescription =. desc 
+  --     ]
 
-    json commandIdRaw
-
-  -- Add or change command-in-process
-  -- Don't think I've tested this yet... at all.
-  post ("command" <//> var <//> "process" <//> var) $ \(commandId :: Int64) (processId :: Int64) -> do
-    note <- param' "note"
-
-    withDb $ do
-      found <- E.select $ from $ \cp -> do
-        where_ (cp ^. CommandProcessCommandId ==. val (toSqlKey commandId) &&. 
-                cp ^. CommandProcessProcessId ==. val (toSqlKey processId))
-        return cp
-
-      case found of
-        [cp] -> do
-          PE.update (entityKey cp) [ CommandProcessNotes =. note ]
-          return ()
-        [] -> do
-          PE.insert $ CommandProcess (toSqlKey processId) (toSqlKey commandId) note
-          return ()
+  --   json commandIdRaw
 
 (cpCommandId, cpProcessId) = (CommandProcessCommandId, CommandProcessProcessId)
 (isIncludedStateId, isStateId) = (IncludeStateIncludedStateId, IncludeStateStateId)

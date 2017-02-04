@@ -138,14 +138,17 @@ spec wai userToken userToken2 = with wai $ do
 
     it "can be deleted" $
       postFormWithJWT "/state/1/process/1/command" userToken
-        [("methodType", "fake"), ("method", "f"), ("desc", "..."), ("note", "..."), ("resultStateId", "4")] >>
+        [("methodType", "fake"), ("method", "f"), ("desc", "..."), ("note", "..."), ("resultStateId", "1")] >>
         deleteWithJWT "/command/7" userToken `shouldRespondWith` 200
+
+    it "can still be added (TEMP)" $ postFormWithJWT "/state/1/process/1/command" userToken
+        [("methodType", "fake"), ("method", "f"), ("desc", "..."), ("note", "..."), ("resultStateId", "2")] `shouldRespondWith` 200
 
     -- Scripty alert - re-uses an ID from above, assumptions about SQLITE id order on deletions...
     it "cannot be deleted without access" $
-      postFormWithJWT "/state/1/process/1/command" userToken
-        [("methodType", "fake"), ("method", "f"), ("desc", "..."), ("note", "..."), ("resultStateId", "4")] >>
-        deleteWithJWT "/command/7" userToken2 `shouldRespondWith` 403
+      --postFormWithJWT "/state/1/process/1/command" userToken
+        --[("methodType", "fake"), ("method", "f"), ("desc", "..."), ("note", "..."), ("resultStateId", "2")] >>
+        deleteWithJWT "/command/8" userToken2 `shouldRespondWith` 403
 
   describe "Apps" $ do
     it "can be listed"  $ getWithJWT "/app" userToken `shouldRespondWith` jsonBody [json|[{"name":"Blender 2.72","id":1,"description":"Full featured 3D modeling and animation program"}]|]
@@ -208,3 +211,13 @@ spec wai userToken userToken2 = with wai $ do
 
 
 
+  describe "Command in process" $ do
+    it "can be added to process" $ postFormWithJWT "/command/1/process/2" userToken [("note", "...")] `shouldRespondWith` 200
+
+    it "can be removed from process" $ deleteWithJWT "/command/1/process/2" userToken `shouldRespondWith` 200
+
+    it "cannot be added without access" $ postFormWithJWT "/command/2/process/2" userToken2 [("note", "...")] `shouldRespondWith` 403
+
+    it "cannot be removed without access" $
+      postFormWithJWT "/command/3/process/2" userToken [("note", "...")] >>
+      deleteWithJWT "/command/3/process/2" userToken2 `shouldRespondWith` 403
