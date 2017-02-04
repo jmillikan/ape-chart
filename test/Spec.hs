@@ -58,7 +58,11 @@ getWithJWT path jwt = request methodGet path [(hAuthorization, "Bearer " <> jwt)
 
 deleteWithJWT path jwt = request methodDelete path [(hAuthorization, "Bearer " <> jwt)] ""
 
-jsonBody = ResponseMatcher 200 [] . bodyEquals 
+jsonBody = ResponseMatcher 200 [] . bodyEquals
+
+
+-- De-scriptifying plan:
+-- ???
 
 -- Assume userToken is for "user" and userToken2 is for "johndoe"
 spec wai userToken userToken2 = with wai $ do
@@ -89,9 +93,8 @@ spec wai userToken userToken2 = with wai $ do
 
     it "cannot be listed without app access" $ getWithJWT "/app/1/state" userToken2 `shouldRespondWith` 403
     
-    it "can be added" $ postFormWithJWT "/state" userToken
-      [ ("appId", "1")
-      , ("name", "Complete rotation")
+    it "can be added" $ postFormWithJWT "/app/1/state" userToken
+      [ ("name", "Complete rotation")
       , ("description", "Set parameters for rotation of selected objects")
       ] `shouldRespondWith` 200
 
@@ -101,11 +104,10 @@ spec wai userToken userToken2 = with wai $ do
 
     it "403 if they don't exist" $ getWithJWT "/state/5" userToken `shouldRespondWith` 403
 
-    it "cannot be added without app access" $ postFormWithJWT "/state" userToken2
-      [ ("appId", "1")
-      , ("name", "Bad state")
+    it "cannot be added without app access" $ postFormWithJWT "/app/1/state" userToken2
+      [ ("name", "Bad state")
       , ("description", "Bad state desc")
-      ] `shouldRespondWith` 200
+      ] `shouldRespondWith` 403
 
   describe "Commands" $ do
     it "can be added in a process" $ do
@@ -124,6 +126,26 @@ spec wai userToken userToken2 = with wai $ do
     it "can be seen in the source state (BRITTLE)" $ getWithJWT "/state/1" userToken `shouldRespondWith` jsonBody [json|{"commands":[{"methodType":"keyboard-emacs","resultStateId":2,"process":[{"processId":1,"commandId":1,"id":1,"notes":"Switch modes"}],"method":"TAB","stateId":1,"id":1,"description":"Switch to Edit Mode"},{"methodType":"keyboard-emacs","resultStateId":3,"process":[{"processId":1,"commandId":2,"id":2,"notes":"For positioning objects"}],"method":"g","stateId":1,"id":2,"description":"Grab"},{"methodType":"keyboard-emacs","resultStateId":4,"process":[{"processId":1,"commandId":6,"id":4,"notes":"In basic situations, you will frequently need the axis modifiers x/y/z."}],"method":"r","stateId":1,"id":6,"description":"Rotate selection"}],"appId":1,"name":"Object Mode","includes":[],"id":1,"description":"Object Mode with 3D View acive"}|]
 
     it "403 if they don't exist" $ getWithJWT "/command/7" userToken `shouldRespondWith` 403
+
+    it "cannot be added without app access" $ do
+      postFormWithJWT "/state/1/process/1/command" userToken2
+        [ ("methodType", "keyboard-emacs")
+        , ("method", "f")
+        , ("desc", "bad")
+        , ("note", "...")
+        , ("resultStateId", "4")
+        ] `shouldRespondWith` 403
+
+    it "can be deleted" $
+      postFormWithJWT "/state/1/process/1/command" userToken
+        [("methodType", "fake"), ("method", "f"), ("desc", "..."), ("note", "..."), ("resultStateId", "4")] >>
+        deleteWithJWT "/command/7" userToken `shouldRespondWith` 200
+
+    -- Scripty alert - re-uses an ID from above, assumptions about SQLITE id order on deletions...
+    it "cannot be deleted without access" $
+      postFormWithJWT "/state/1/process/1/command" userToken
+        [("methodType", "fake"), ("method", "f"), ("desc", "..."), ("note", "..."), ("resultStateId", "4")] >>
+        deleteWithJWT "/command/7" userToken2 `shouldRespondWith` 403
 
   describe "Apps" $ do
     it "can be listed"  $ getWithJWT "/app" userToken `shouldRespondWith` jsonBody [json|[{"name":"Blender 2.72","id":1,"description":"Full featured 3D modeling and animation program"}]|]
@@ -145,7 +167,6 @@ spec wai userToken userToken2 = with wai $ do
 
     it "Cannot be viewed by users without access" $ getWithJWT "/app/2" userToken2 `shouldRespondWith` 403
 
-    -- This set of tests is extremely scripty. I consider that better than being 200 lines long, but geez.
     it "Cannot be deleted without access" $ deleteWithJWT "/app/2" userToken2 `shouldRespondWith` 403
 
     -- SCRIPTINESS ALERT
@@ -171,4 +192,19 @@ spec wai userToken userToken2 = with wai $ do
                    [("name", "Bad process")
                    ,("description", "<...>")
                    ] `shouldRespondWith` 403
+
+  -- More or less have to do this at end of script... This is getting hairy.
+  -- These require a bunch of states to mess with...
+  describe "Included states" $ do
+    it "can be added" $ postFormWithJWT "/state/1/include_state/4" userToken [] `shouldRespondWith` 200
+
+    it "cannot be added without access" $ postFormWithJWT "/state/2/include_state/4" userToken2 [] `shouldRespondWith` 403
+  
+    it "cannot be deleted without access" $ postFormWithJWT "/state/2/include_state/4" userToken2 [] >>
+      postFormWithJWT "/state/2/include_state/4" userToken2 [] `shouldRespondWith` 403
+
+    it "can be deleted" $ postFormWithJWT "/state/3/include_state/4" userToken [] >>
+      postFormWithJWT "/state/3/include_state/4" userToken [] `shouldRespondWith` 200
+
+
 

@@ -197,6 +197,10 @@ class AccessCheck a where
 -- Not only will these checks not be atomic with the actual action,
 -- the pair checks aren't even atomic with each other
   
+instance (AccessCheck a, AccessCheck b) => AccessCheck (a,b) where
+  accessCheck (keyA, keyB) userKey =
+    (&&) <$> accessCheck keyA userKey <*> accessCheck keyB userKey
+
 instance AccessCheck (Key App) where
   accessCheck appKey userKey = do
     apps <- E.select $ from $ \((a :: SqlExpr (Entity App)) `InnerJoin` (aa :: SqlExpr (Entity AppAccess))) -> do
@@ -206,17 +210,34 @@ instance AccessCheck (Key App) where
 
     return $ length apps /= 0
 
-instance (AccessCheck a, AccessCheck b) => AccessCheck (a,b) where
-  accessCheck (keyA, keyB) userKey =
-    (&&) <$> accessCheck keyA userKey <*> accessCheck keyB userKey
-
 instance AccessCheck (Key State) where
   accessCheck stateKey userKey = do
-    apps <- E.select $ from $ \((s :: SqlExpr (Entity State)) `InnerJoin` (a :: SqlExpr (Entity App)) `InnerJoin` (aa :: SqlExpr (Entity AppAccess))) -> do
-      on $ (a ^. AppId) ==. (aa ^. AppAccessAppId)
-      on $ (s ^. StateAppId) ==. (a ^. AppId)
-      where_ $ aa ^. AppAccessUserId ==. val userKey &&. s ^. StateId ==. val stateKey
-      return (a ^. AppId)
+    apps <- E.select $ from $ \(st `InnerJoin` app `InnerJoin` aa) -> do
+      on $ (app ^. AppId) ==. (aa ^. AppAccessAppId)
+      on $ (st ^. StateAppId) ==. (app ^. AppId)
+      where_ $ aa ^. AppAccessUserId ==. val userKey &&. st ^. StateId ==. val stateKey
+      return (app ^. AppId)
+
+    return $ length apps /= 0
+
+instance AccessCheck (Key Process) where
+  accessCheck processKey userKey = do
+    apps <- E.select $ from $ \(pr `InnerJoin` app `InnerJoin` aa) -> do
+      on $ (app ^. AppId) ==. (aa ^. AppAccessAppId)
+      on $ (pr ^. ProcessAppId) ==. (app ^. AppId)
+      where_ $ aa ^. AppAccessUserId ==. val userKey &&. pr ^. ProcessId ==. val processKey
+      return (app ^. AppId)
+
+    return $ length apps /= 0
+
+instance AccessCheck (Key Command) where
+  accessCheck processKey userKey = do
+    apps <- E.select $ from $ \(st `InnerJoin` com `InnerJoin` app `InnerJoin` aa) -> do
+      on $ (app ^. AppId) ==. (aa ^. AppAccessAppId)
+      on $ (com ^. CommandStateId) ==. (st ^. StateId)
+      on $ (st ^. StateAppId) ==. (app ^. AppId)
+      where_ $ aa ^. AppAccessUserId ==. val userKey &&. com ^. CommandId ==. val processKey
+      return (app ^. AppId)
 
     return $ length apps /= 0
 
@@ -228,8 +249,8 @@ appAccess appKey f = do
   access <- withDb $ accessCheck appKey userKey
   
   if access
-    then do { liftIO $ putStrLn "Running action"; f }
-    else do { liftIO $ putStrLn "Setting status 403"; setStatus status403 }
+    then f
+    else setStatus status403
 
 authApi :: SpockCtxM (Key User) SqlBackend () JWK ()
 authApi = do
@@ -258,6 +279,12 @@ authApi = do
       states <- withDb $ PE.selectList [StateAppId PE.==. appKey] []
       json states
 
+  post ("app" <//> var <//> "state") $ \(appKey :: Key App) -> do
+    appAccess appKey $ do
+      state <- State appKey <$> param' "name" <*> param' "description"
+      stateId <- withDb $ PE.insert state
+      json $ fromSqlKey stateId
+
   get ("state" <//> var) $ \(stateKey :: Key State) -> do
     appAccess stateKey $ do
       state <- withDb $ getProcessState stateKey
@@ -279,57 +306,58 @@ authApi = do
 
   -- New command in a process, with optional result state
   post ("state" <//> var <//> "process" <//> var <//> "command") $ \stateId processId -> do
-    Just s :: Maybe State <- withDb $ PE.get $ toSqlKey $ stateId -- State exists?
-                             
-    note <- param' "note"
+    appAccess (stateId, processId) $ do
+      Just s :: Maybe State <- withDb $ PE.get stateId -- State exists?
+    
+      note <- param' "note"
 
-    resultStateId <- param' "resultStateId"
-    getResultState <- case resultStateId of
-      "" -> do
-        newState <- State (stateAppId s) <$> param' "stateName" <*> param' "stateDesc" -- Is this lazy?
-        return $ PE.insert newState 
-      n -> return $ return $ toSqlKey $ read $ resultStateId -- This is dumb
+      resultStateId <- param' "resultStateId"
+      getResultState <- case resultStateId of
+        "" -> do
+          newState <- State (stateAppId s) <$> param' "stateName" <*> param' "stateDesc" -- Is this lazy?
+          return $ PE.insert newState 
+        n -> return $ return $ toSqlKey $ read resultStateId -- This is dumb
            
-    command <- Command (toSqlKey stateId) <$> param' "methodType" <*> param' "method" <*> param' "desc" -- <*> stateId...
+      command <- Command stateId <$> param' "methodType" <*> param' "method" <*> param' "desc" -- <*> stateId...
            
-    commandId <- withDb $ do -- Transaction???
-      resultStateKey <- getResultState
-      cid <- PE.insert $ command (Just resultStateKey)
-      when (processId > 0) $ -- I hate sentinel values
-        void $ PE.insert $ CommandProcess (toSqlKey processId) cid note
-      return cid
-    json $ fromSqlKey commandId
+      commandId <- withDb $ do -- Transaction???
+        resultStateKey <- getResultState
+        cid <- PE.insert $ command (Just resultStateKey)
+        when (fromSqlKey processId > 0) $ -- This needs to be designed back out by splitting the endpoint...
+          void $ PE.insert $ CommandProcess processId cid note
+        return cid
+      json $ fromSqlKey commandId
 
   -- Add/delete "include state"
   -- TODO: Verify same app...
   post ("state" <//> var <//> "include_state" <//> var) $ \stateId includeId -> do
-    i <- withDb $ insertUnique $ IncludeState (toSqlKey stateId) (toSqlKey includeId)
-    json (stateId, includeId)
+    appAccess (stateId, includeId) $ do
+      i <- withDb $ insertUnique $ IncludeState stateId includeId
+      json (stateId, includeId)
 
   delete ("state" <//> var <//> "include_state" <//> var) $ \stateId includeId -> do
-    i <- withDb $ deleteBy $ UniqueIncludeState (toSqlKey stateId) (toSqlKey includeId)
-    json (stateId, includeId)
+    appAccess (stateId, includeId) $ do
+      i <- withDb $ deleteBy $ UniqueIncludeState stateId includeId
+      json (stateId, includeId)
 
   -- Delete command
-  delete ("command" <//> var) $ \commandId -> do
-    c <- withDb $ PE.delete (toSqlKey commandId :: Key Command)
-    json commandId
+  delete ("command" <//> var) $ \(commandId :: Key Command) -> do
+    appAccess commandId $ do
+      c <- withDb $ PE.delete commandId
+      json commandId
 
   -- Remove command from process
   delete ("command" <//> var <//> "process" <//> var) $ \commandId processId -> do
-    cp <- withDb $ deleteBy $ UniqueCommandProcess (toSqlKey processId) (toSqlKey commandId)
+    cp <- withDb $ deleteBy $ UniqueCommandProcess processId commandId
     json (commandId, processId)
 
-  -- Some blanket add & fetch endpoints
+
+  -- These endpoints are unused from the fronted. 
+
   -- For testing porpoises >_<
   get ("command" <//> var) $ \commandId -> do
     (command :: Maybe Command) <- withDb (PE.get $ toSqlKey commandId)
     maybe (setStatus notFound404) json command
-
-  post ("state") $ do
-    state <- State <$> param' "appId" <*> param' "name" <*> param' "description"
-    stateId <- withDb $ PE.insert state
-    json $ fromSqlKey stateId
 
   -- Update command...
   post ("command" <//> var) $ \commandIdRaw -> do

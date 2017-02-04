@@ -300,6 +300,8 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', '$q', ($http, $tim
 	    httpData(qBackoff(() => $http.get('/app/' + appId))),
 	deleteApp: (appId) =>
 	    httpData($http.delete('/app/' + appId)),
+        addState: (appId, name, description) =>
+            httpData($http.post('/app/' + appId + '/state', {name, description}, {})),
         getStates: (appId, callback) =>
             httpData(qBackoff(() => $http.get('/app/' + appId + '/state/'))),
         getStateDetails: (stateId, callback) =>
@@ -308,8 +310,6 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', '$q', ($http, $tim
             httpData(qBackoff(() => $http.get('/app/' + appId + '/process'))),
 	addProcess: (appId, name, description) =>
 	    httpData($http.post('/app/' + appId + '/process', {name, description})),
-        addState: (appId, name, description) =>
-            httpData($http.post('/state', {name, description, appId}, {})),
         addCommand: (stateId, processId, command) => 
             httpData($http.post('/state/' + stateId + '/process/' + (processId ? processId : -1) + '/command', 
 				command, {})),
