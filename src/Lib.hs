@@ -11,24 +11,14 @@ module Lib
     ) where
 
 import Control.Monad.IO.Class (liftIO, MonadIO)
-import Control.Monad.Trans.Class (lift)
-import Control.Monad.Error.Class (MonadError)
 import Control.Monad (when, void)
 import Control.Monad.Logger (runNoLoggingT, NoLoggingT(..))
-import Data.Int (Int64)
 import Data.Aeson hiding (json)
 import Data.Text (Text, pack, unpack, stripPrefix)
-import Data.Text.Lazy (fromStrict)
 import qualified Data.Text as T (tail)
-import Data.Text.Lazy.Encoding (decodeUtf8, encodeUtf8)
-import qualified Data.Text.Encoding as DTE
-import Data.String (fromString)
-import qualified Data.List as L
-import qualified Data.Function as F
-import qualified Data.Maybe as DM
-import qualified Data.ByteString.Lazy as LS
-
-import Control.Lens (view, preview, set, (&), (.~))
+import qualified Data.Text.Encoding as DTE (decodeUtf8)
+import qualified Data.List as L (groupBy)
+import qualified Data.Maybe as DM (catMaybes)
 
 import Network.HTTP.Types.Status
 import Network.Wai (Middleware)
@@ -37,27 +27,7 @@ import qualified Network.Wai.Middleware.Static as M
 import Web.Spock
 import Web.Spock.Config
 
-import Crypto.JOSE.Error (Error, AsError)
-import Crypto.JOSE.JWK (JWK, bestJWSAlg)
-import Crypto.JOSE.JWS (Protection(Protected), newJWSHeader)
-import Crypto.JOSE.Compact (encodeCompact, decodeCompact)
-import Crypto.JWT
-  ( JWTError
-  , ClaimsSet
-  , jwtClaimsSet
-  , getString    
-  , emptyClaimsSet
-  , createJWSJWT
-  , validateJWSJWT
-  , defaultJWTValidationSettings
-  , audiencePredicate
-  , claimIss
-  , claimSub
-  )
-
-import Crypto.Random.Types (MonadRandom)
-
-import Crypto.BCrypt
+import Crypto.JOSE.JWK (JWK)
 
 import Control.Monad.Except (runExceptT)
 
@@ -68,38 +38,12 @@ import Database.Persist ((=.))
 import Database.Persist.Sql (fromSqlKey)
 import Database.Esqueleto hiding (update, get, Value, (=.), select, delete, groupBy)
 import Database.Persist.Sqlite (runSqlite, runMigration, withSqlitePool)
-
 import Data.Pool (Pool)
 
 import Db
+import Authentication
+import Authorization
 
-
--- Security - needs to go elsewhere
-getJWK :: IO (Maybe JWK)
-getJWK = decode <$> LS.readFile "app-guide.jwk"
-
-makeJWT
-  :: (Control.Monad.Error.Class.MonadError Error m,
-      Crypto.Random.Types.MonadRandom m) =>
-     JWK -> Key User -> m LS.ByteString
-makeJWT jwk userKey = do
-  alg <- bestJWSAlg jwk
-  let header = newJWSHeader (Protected, alg)
-  createJWSJWT jwk header (makeClaims $ userKey) >>= encodeCompact
-
-makeClaims :: Key User -> ClaimsSet
-makeClaims userId = emptyClaimsSet
-  & claimIss .~ Just (fromString "https://localhost/")
-  & claimSub .~ Just (fromString $ show $ fromSqlKey userId)
-  -- & claimExp .~ intDate "2011-03-22 18:43:00"
-  -- & over unregisteredClaims (insert "http://example.com/is_root" (Bool True))
-  -- & addClaim "http://example.com/is_root" (Bool True)
-
-validateToken jwk token = do
-  jwtData <- decodeCompact (encodeUtf8 $ fromStrict token)
-  validateJWSJWT defaultJWTValidationSettings jwk jwtData
-  return $ jwtClaimsSet jwtData
--- End security stuff
 
 -- PE.get returns State, E.select returns Entity State.
 -- Trying not to intermix them for clarity
@@ -142,9 +86,10 @@ authenticate = do
   token <- maybe (fail "Not bearer authorization") return (stripPrefix "Bearer " header)
 
   jwk <- getState
-  claims <- either (\(_ :: JWTError) -> fail "Error decoding or validating JWT") return
-          =<< runExceptT (validateToken jwk token)
-  sub <- maybe (fail "No sub in JWT") return (view claimSub claims)
+  claims <- either (\_ -> fail "Error decoding or validating JWT") return
+          =<< (liftIO $ runExceptT (validateToken jwk token))
+  -- This stuff needs to go into Authentication...
+  sub <- maybe (fail "No sub in JWT") return (getClaimSub claims)
   subString <- maybe (fail "No string in sub") return (getString sub)
   return $ toSqlKey $ read $ unpack subString
 
@@ -163,15 +108,13 @@ unauthApi = do
 
     let passHash = userPassword (entityVal user)
 
-    when (not $ validatePassword (DTE.encodeUtf8 passHash) (DTE.encodeUtf8 password))
-      authFail
+    when (not $ checkPassword passHash password) authFail
 
     jwk <- getState
     result <- runExceptT $ makeJWT jwk (entityKey user)
 
-    -- To lazy text via bytestring, I guess.
-    jwt <- either (\(e :: Error) -> fail "Failure making JWT claims set") (return . decodeUtf8) result
-    json jwt
+    jwt <- either (\e -> fail "Failure making JWT claims set") return result
+    json $ DTE.decodeUtf8 jwt
 
   post ("user") $ do
     (uname :: Text) <- param' "username"
@@ -180,7 +123,7 @@ unauthApi = do
     users <- withDb $ PE.selectList [UserUsername PE.==. uname] []
     when (length users /= 0) $ fail "That username is not available."
 
-    mhash <- liftIO $ hashPasswordUsingPolicy slowerBcryptHashingPolicy (DTE.encodeUtf8 password)
+    mhash <- liftIO $ bcryptHash password
     h <- maybe (fail "Password hashing error") return mhash
 
     let user = User uname (DTE.decodeUtf8 h) -- Write a failing test for this...
@@ -193,56 +136,6 @@ getUserKey = getContext
 
 -- Run a SQL action from pool
 withDb f = runQuery (\conn -> runSqlPersistM f conn)
-
-class AccessCheck a where
-  accessCheck :: a -> Key User -> SqlPersistM Bool
-
--- Not only will these checks not be atomic with the actual action,
--- the pair checks aren't even atomic with each other
-  
-instance (AccessCheck a, AccessCheck b) => AccessCheck (a,b) where
-  accessCheck (keyA, keyB) userKey =
-    (&&) <$> accessCheck keyA userKey <*> accessCheck keyB userKey
-
-instance AccessCheck (Key App) where
-  accessCheck appKey userKey = do
-    apps <- E.select $ from $ \((a :: SqlExpr (Entity App)) `InnerJoin` (aa :: SqlExpr (Entity AppAccess))) -> do
-      on $ (a ^. AppId) ==. (aa ^. AppAccessAppId)
-      where_ $ aa ^. AppAccessUserId ==. val userKey &&. a ^. AppId ==. val appKey
-      return (a ^. AppId)
-
-    return $ length apps /= 0
-
-instance AccessCheck (Key State) where
-  accessCheck stateKey userKey = do
-    apps <- E.select $ from $ \(st `InnerJoin` app `InnerJoin` aa) -> do
-      on $ (app ^. AppId) ==. (aa ^. AppAccessAppId)
-      on $ (st ^. StateAppId) ==. (app ^. AppId)
-      where_ $ aa ^. AppAccessUserId ==. val userKey &&. st ^. StateId ==. val stateKey
-      return (app ^. AppId)
-
-    return $ length apps /= 0
-
-instance AccessCheck (Key Process) where
-  accessCheck processKey userKey = do
-    apps <- E.select $ from $ \(pr `InnerJoin` app `InnerJoin` aa) -> do
-      on $ (app ^. AppId) ==. (aa ^. AppAccessAppId)
-      on $ (pr ^. ProcessAppId) ==. (app ^. AppId)
-      where_ $ aa ^. AppAccessUserId ==. val userKey &&. pr ^. ProcessId ==. val processKey
-      return (app ^. AppId)
-
-    return $ length apps /= 0
-
-instance AccessCheck (Key Command) where
-  accessCheck processKey userKey = do
-    apps <- E.select $ from $ \(st `InnerJoin` com `InnerJoin` app `InnerJoin` aa) -> do
-      on $ (app ^. AppId) ==. (aa ^. AppAccessAppId)
-      on $ (com ^. CommandStateId) ==. (st ^. StateId)
-      on $ (st ^. StateAppId) ==. (app ^. AppId)
-      where_ $ aa ^. AppAccessUserId ==. val userKey &&. com ^. CommandId ==. val processKey
-      return (app ^. AppId)
-
-    return $ length apps /= 0
 
 appAccess :: AccessCheck a => a -> ActionCtxT (Key User) (WebStateM SqlBackend () JWK) ()
      -> ActionCtxT (Key User) (WebStateM SqlBackend () JWK) ()
@@ -326,12 +219,8 @@ authApi = do
            
       commandId <- withDb $ do -- Transaction???
         resultStateKey <- getResultState
-        --liftIO $ putStrLn $ show $ command (Just resultStateKey)
         cid <- PE.insert $ command (Just resultStateKey)
         when (fromSqlKey processId > 0) $ do -- This needs to be designed back out by splitting the endpoint...
-          --liftIO $ putStrLn $ show $ CommandProcess processId cid note
-          liftIO $ putStrLn $ "New command ID: " ++ show (fromSqlKey cid)
-          liftIO $ putStrLn $ "Process ID for command: " ++ show (fromSqlKey processId)
           void $ PE.insert $ CommandProcess processId cid note
         return cid
       json $ fromSqlKey commandId
@@ -410,7 +299,7 @@ authApi = do
 (isIncludedStateId, isStateId) = (IncludeStateIncludedStateId, IncludeStateStateId)
 
 collapseChildren :: Eq a => [(a,Maybe b)] -> [(a,[b])]
-collapseChildren joined = map extractParent $ L.groupBy (F.on (==) fst) joined
+collapseChildren joined = map extractParent $ L.groupBy (\a b -> fst a == fst b) joined
     where extractParent all@((p,_):_) = (p, DM.catMaybes $ map snd all)
 
 getUserApps :: Key User -> SqlPersistM [Entity App]

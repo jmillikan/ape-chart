@@ -48,7 +48,7 @@ main = do
 
   -- Ideally this would recreate the DB each request
   runNoLoggingT $ SQ.withSqlitePool "test.db" 10 $ \pool -> 
-    NoLoggingT $ hspec $ spec (spockAsApp $ app pool) (toStrict jwt1) (toStrict jwt2)
+    NoLoggingT $ hspec $ spec (spockAsApp $ app pool) jwt1 jwt2
 
 formUrlEncodeQuery = foldr (\(k,v) s -> s <> "&" <> (fromStrict $ urlEncode False k) <> "=" <> (fromStrict $ urlEncode False v)) ""
 
