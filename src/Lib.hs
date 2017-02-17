@@ -29,8 +29,6 @@ import Web.Spock.Config
 
 import Crypto.JOSE.JWK (JWK)
 
-import Control.Monad.Except (runExceptT)
-
 -- These four identifiers are the subject of collisions *and* confusion...
 import qualified Database.Persist as PE (get, update, insert, delete, deleteCascade, selectList, selectFirst, (==.)) 
 import qualified Database.Esqueleto as E (select)
@@ -44,9 +42,8 @@ import Db
 import Authentication
 import Authorization
 
-
--- PE.get returns State, E.select returns Entity State.
--- Trying not to intermix them for clarity
+-- Style/usage stuff:
+-- Trying to keep ExceptT, bcrypt and JWT errors in libraries and mostly have Either Text or Maybe in here.
 
 -- Main entry point
 -- Needs some notion of configuration...
@@ -55,7 +52,7 @@ runApp dbFilename portNum = do
   runSqlite (pack dbFilename) $ runMigration migrateAll
 
   -- FOREIGN KEY pragma is OFF.
-  -- For turning it ion, see https://github.com/yesodweb/yesod/wiki/Activate-foreign-key-checking-in-Sqlite
+  -- For turning it on, see https://github.com/yesodweb/yesod/wiki/Activate-foreign-key-checking-in-Sqlite
   -- 
   runNoLoggingT $ withSqlitePool (pack dbFilename) 1 $ \pool ->
     NoLoggingT $ runSpock portNum $ app pool
@@ -69,6 +66,8 @@ app pool = do
   cfg <- defaultSpockCfg () (PCPool pool) jwk
   spock cfg api
 
+getSecret = getState
+
 api :: SpockM SqlBackend () JWK ()
 api = do
   c <- liftIO $ M.initCaching M.NoCaching
@@ -80,18 +79,19 @@ api = do
   unauthApi
   prehook authenticate authApi
 
+authFail :: Text -> ActionCtxT () (WebStateM SqlBackend () JWK) a
+authFail s = setStatus status403 >> json s
+
 authenticate :: ActionCtxT () (WebStateM SqlBackend () JWK) (Key User)
 authenticate = do
-  header <- maybe (fail "No authorization header") return =<< header "Authorization"
-  token <- maybe (fail "Not bearer authorization") return (stripPrefix "Bearer " header)
+  header <- maybe (authFail "No authorization header") return =<< header "Authorization"
+  token <- maybe (authFail "Not bearer authorization") return (stripPrefix "Bearer " header)
 
-  jwk <- getState
-  claims <- either (\_ -> fail "Error decoding or validating JWT") return
-          =<< (liftIO $ runExceptT (validateToken jwk token))
-  -- This stuff needs to go into Authentication...
-  sub <- maybe (fail "No sub in JWT") return (getClaimSub claims)
-  subString <- maybe (fail "No string in sub") return (getString sub)
-  return $ toSqlKey $ read $ unpack subString
+  jwk <- getSecret
+  either authFail return =<< liftIO (getJwtUser jwk token)
+
+loginFail :: ActionCtxT () (WebStateM SqlBackend () JWK) a
+loginFail = setStatus status401 >> json ("Wrong username or password" :: String)
 
 unauthApi :: SpockCtxM () SqlBackend () JWK ()
 unauthApi = do
@@ -99,19 +99,19 @@ unauthApi = do
     (uname :: Text) <- param' "username"
     (password :: Text) <- param' "password"
 
-    let authFail = do
+    let loginFail = do
           setStatus status401
           text "Wrong username or password"
 
     mUser <- withDb $ PE.selectFirst [UserUsername PE.==. uname] []
-    user <- maybe authFail return mUser
+    user <- maybe loginFail return mUser
 
     let passHash = userPassword (entityVal user)
 
-    when (not $ checkPassword passHash password) authFail
+    when (not $ checkPassword passHash password) loginFail
 
-    jwk <- getState
-    result <- runExceptT $ makeJWT jwk (entityKey user)
+    jwk <- getSecret
+    result <- makeJWT jwk (entityKey user)
 
     jwt <- either (\e -> fail "Failure making JWT claims set") return result
     json $ DTE.decodeUtf8 jwt

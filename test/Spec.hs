@@ -40,11 +40,11 @@ main = do
   jwk <- maybe (fail "Can't start tests, no JWK") return mjwk
 
   -- Fudge a JWT for use with ID 1 and ID 2. This isn't very good.
-  mjwt1 <- runExceptT $ makeJWT jwk (toSqlKey 1 :: Key User)
-  jwt1 <- either (\(e :: Error) -> fail "Failure making JWT for test user") return mjwt1
+  mjwt1 <- makeJWT jwk (toSqlKey 1 :: Key User)
+  jwt1 <- either (\e -> fail "Failure making JWT for test user") return mjwt1
 
-  mjwt2 <- runExceptT $ makeJWT jwk (toSqlKey 2 :: Key User)
-  jwt2 <- either (\(e :: Error) -> fail "Failure making JWT for test user") return mjwt2
+  mjwt2 <- makeJWT jwk (toSqlKey 2 :: Key User)
+  jwt2 <- either (\e -> fail "Failure making JWT for test user") return mjwt2
 
   -- Ideally this would recreate the DB each request
   runNoLoggingT $ SQ.withSqlitePool "test.db" 10 $ \pool -> 
