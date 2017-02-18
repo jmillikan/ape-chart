@@ -4,6 +4,8 @@ appGuide.config(['$locationProvider', '$routeProvider', ($locationProvider, $rou
     $locationProvider.hashPrefix('!');
 
     $routeProvider
+        .when('/login', { templateUrl: 'partials/login.html', controller: 'LoginController', controllerAs: 'c' })
+        .when('/register', { templateUrl: 'partials/register.html', controller: 'RegisterController', controllerAs: 'c' })
         .when('/', { templateUrl: 'partials/front.html' })
         .when('/:appId', { templateUrl: 'partials/app.html' });
 }]);
@@ -14,16 +16,6 @@ appGuide.controller('AppController', ['$rootScope', 'state', ($rootScope, state)
 
 appGuide.controller('ChooseAppController', ['$scope', 'state', ($scope, state) => {
     $scope.apps = [];
-
-    state.getJwt("jmillikan", "jmillikan").then((jwtData) => {
-	console.log("JWT (good):");
-	console.log(jwtData);
-    });
-
-    state.getJwt("gingie", "bottle").then((jwtData) => {
-	console.log("JWT (bad):");
-	console.log(jwtData);
-    });
 
     $scope.refreshApps = () => state.getApps().then((apps) => $scope.apps = apps);
 
@@ -241,6 +233,26 @@ appGuide.controller('AddCommandController', ['$scope', 'state', ($scope, state) 
     $scope.hideAddCommand = () => $scope.addCommandVisible = false;
 }]);
 
+appGuide.controller('LoginController', ['$scope', 'state', '$location', function($scope, state, $location) {
+    var c = this;
+
+    c.login = function(){
+        state.getJwt(c.username, c.password)
+            .then(r => { console.log(r); $location.path('/') })
+            .catch(r => console.log("Login failure"));
+    }
+}]);
+
+appGuide.controller('RegisterController', ['$scope', 'state', '$location', function($scope, state, $location) {
+    var c = this;
+
+    c.register = function(){
+        var reg = state.registerUser(c.username, c.password)
+            .then(r => { console.log(r); $location.path("/login"); })
+            .catch(r => console.log("Register failure"));
+    }
+}]);
+
 appGuide.factory('state', ['$http', '$timeout', '$rootScope', '$q', ($http, $timeout, $rootScope, $q) => {
     var networkState = {networkTrouble: false};
     // Very rough handling of this, just to provide something...
@@ -289,38 +301,74 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', '$q', ($http, $tim
 
     var httpData = p => p.then(r => r.data);
 
+    var token = null;
+
+    var tokenConfig = () => ({
+        headers: { "Authorization" : "Bearer " + token }
+    });
+
+    // TODO: Interceptor, probably...
+    var authPost = (path, data) => {
+        if(token == null)
+            return $q.reject("Your arms are in your magic chest, pooplord.");
+
+        return $http.post(path, data, tokenConfig());
+    };
+
+    var authGet = (path) => {
+        if(token == null)
+            return $q.reject("Your arms are in your magic chest, pooplord.");
+
+        return $http.get(path, tokenConfig());
+    };
+
+    var authDelete = (path) => {
+        if(token == null)
+            return $q.reject("Your arms are in your magic chest, pooplord.");
+
+        return $http.delete(path, tokenConfig());
+    };
+
     return {
 	networkState: networkState,
-	getJwt: (username, password) => httpData($http.post('/jwt', {username, password})),
+	getJwt: (username, password) => {
+            return httpData($http.post('/jwt', {username, password}))
+                .then(r => {
+                    token = r;
+                    
+                    return true;
+                });
+        },
+	registerUser: (username, password) => httpData($http.post('/user', {username, password})),
         addApp: (name, description) =>
 	    httpData($http.post('/app', {name: name, description: description}, {})),
         getApps: (callback) =>
-	    httpData(qBackoff(() => $http.get('/app'))),
+	    httpData(qBackoff(() => authGet('/app'))),
         getApp: (appId) =>
-	    httpData(qBackoff(() => $http.get('/app/' + appId))),
+	    httpData(qBackoff(() => authGet('/app/' + appId))),
 	deleteApp: (appId) =>
-	    httpData($http.delete('/app/' + appId)),
+	    httpData(authDelete('/app/' + appId)),
         addState: (appId, name, description) =>
-            httpData($http.post('/app/' + appId + '/state', {name, description}, {})),
+            httpData(authPost('/app/' + appId + '/state', {name, description}, {})),
         getStates: (appId, callback) =>
-            httpData(qBackoff(() => $http.get('/app/' + appId + '/state/'))),
+            httpData(qBackoff(() => authGet('/app/' + appId + '/state/'))),
         getStateDetails: (stateId, callback) =>
-	    httpData(qBackoff(() => $http.get('/state/' + stateId))),
+	    httpData(qBackoff(() => authGet('/state/' + stateId))),
         getProcesses: (appId) => 
-            httpData(qBackoff(() => $http.get('/app/' + appId + '/process'))),
+            httpData(qBackoff(() => authGet('/app/' + appId + '/process'))),
 	addProcess: (appId, name, description) =>
-	    httpData($http.post('/app/' + appId + '/process', {name, description})),
+	    httpData(authPost('/app/' + appId + '/process', {name, description})),
         addCommand: (stateId, processId, command) => 
-            httpData($http.post('/state/' + stateId + '/process/' + (processId ? processId : -1) + '/command', 
+            httpData(authPost('/state/' + stateId + '/process/' + (processId ? processId : -1) + '/command', 
 				command, {})),
         addIncludeState: (stateId, includeStateId) =>
-            httpData($http.post('/state/' + stateId + '/include_state/' + includeStateId)),
+            httpData(authPost('/state/' + stateId + '/include_state/' + includeStateId)),
         removeIncludeState: (stateId, includeStateId) => 
-            httpData($http.delete('/state/' + stateId + '/include_state/' + includeStateId)),
+            httpData(authDelete('/state/' + stateId + '/include_state/' + includeStateId)),
         deleteCommand: (commandId) => 
-            httpData($http.delete('/command/' + commandId)),
+            httpData(authDelete('/command/' + commandId)),
         removeCommand: (commandId, processId) => 
-            httpData($http.delete('/command/' + commandId + '/process/' + processId))
+            httpData(authDelete('/command/' + commandId + '/process/' + processId))
     };
 }]);
 

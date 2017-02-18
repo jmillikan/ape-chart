@@ -1,0 +1,13 @@
+<h1>Log In</h1>
+<div>
+<form>
+  <div class="form-group">
+    <label for="inputUsername">Username</label>
+    <input ng-model="c.username" class="form-control" id="inputUsername" placeholder="Username">
+  </div>
+  <div class="form-group">
+    <label for="inputPassword">Password</label>
+    <input ng-model="c.password" type="password" class="form-control" id="inputPassword" placeholder="Password">
+  </div>
+  <button ng-click="c.login()" type="submit" class="btn btn-primary">Submit</button>
+</div>
