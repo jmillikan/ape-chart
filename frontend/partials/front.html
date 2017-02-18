@@ -1,5 +1,5 @@
 <h1>Apps</h1>
-<div ng-controller="ChooseAppController">
+<div>
   <input ng-if="!newApp.visible" type="button" class="btn btn-sm btn-primary" ng-click="newApp.show()" value="Add App">
   <form class="inline-form" ng-if="newApp.visible">
     <input type="text" ng-model="newApp.name" placeholder="Name">

@@ -6,15 +6,22 @@ appGuide.config(['$locationProvider', '$routeProvider', ($locationProvider, $rou
     $routeProvider
         .when('/login', { templateUrl: 'partials/login.html', controller: 'LoginController', controllerAs: 'c' })
         .when('/register', { templateUrl: 'partials/register.html', controller: 'RegisterController', controllerAs: 'c' })
-        .when('/', { templateUrl: 'partials/front.html' })
-        .when('/:appId', { templateUrl: 'partials/app.html' });
+        .when('/', { templateUrl: 'partials/front.html', controller: 'ChooseAppController', controllerAs: 'c' })
+        .when('/:appId', { templateUrl: 'partials/app.html', controller: 'AppFudgeController', controllerAs: 'c' });
 }]);
 
 appGuide.controller('AppController', ['$rootScope', 'state', ($rootScope, state) => {
     $rootScope.networkState = state.networkState;
 }]);
 
-appGuide.controller('ChooseAppController', ['$scope', 'state', ($scope, state) => {
+appGuide.controller('ChooseAppController', ['$scope', 'state', '$location', function($scope, state, $location) {
+
+    // Need an actual good approach to this at some point.
+    if(!state.haveToken()){
+        $location.path('/login');
+        return;
+    }
+    
     $scope.apps = [];
 
     $scope.refreshApps = () => state.getApps().then((apps) => $scope.apps = apps);
@@ -39,7 +46,14 @@ appGuide.controller('ChooseAppController', ['$scope', 'state', ($scope, state) =
    Relationship of $scope with controllers through here is lumpy.
    Thankfully everything used is either immediate (UI states), from 1 level up (stateId), or in fudge scope (addRootState etc).
 */
-appGuide.controller('AppFudgeController', ['$scope', 'state', '$routeParams', '$location', ($scope, state, $routeParams, $location) => {
+appGuide.controller('AppFudgeController', ['$scope', 'state', '$routeParams', '$location', function($scope, state, $routeParams, $location) {
+
+    // Need an actual good approach to this at some point.
+    if(!state.haveToken()){
+        $location.path('/login');
+        return;
+    }
+
     $scope.appId = Number($routeParams.appId);
     $scope.app = null;
     $scope.confirmDelete = () => {
@@ -339,6 +353,7 @@ appGuide.factory('state', ['$http', '$timeout', '$rootScope', '$q', ($http, $tim
                     return true;
                 });
         },
+        haveToken: () => token != null,
 	registerUser: (username, password) => httpData($http.post('/user', {username, password})),
         addApp: (name, description) =>
 	    httpData($http.post('/app', {name: name, description: description}, {})),
