@@ -7,6 +7,9 @@ import Data.ByteString.Lazy (toStrict, fromStrict)
 import Control.Monad.Logger
 import System.Directory
 
+import Control.Error.Util ((!?), exceptT)
+import Control.Monad.Except (lift)
+
 import Test.Hspec hiding (pending)
 import Test.Hspec.Wai
 import Test.Hspec.Wai.Matcher (bodyEquals, ResponseMatcher)
@@ -36,19 +39,13 @@ main = do
 
   SQ.runSqlite "test.db" $ SQ.runMigration migrateAll
 
-  mjwk <- getJWK
-  jwk <- maybe (fail "Can't start tests, no JWK") return mjwk
+  exceptT (fail . show) return  $ do
+    jwk <- getJWK !? "Can't start tests, no JWK"
+    jwt1 <- makeJWT jwk (toSqlKey 1 :: Key User)
+    jwt2 <- makeJWT jwk (toSqlKey 2 :: Key User)
 
-  -- Fudge a JWT for use with ID 1 and ID 2. This isn't very good.
-  mjwt1 <- makeJWT jwk (toSqlKey 1 :: Key User)
-  jwt1 <- either (\e -> fail "Failure making JWT for test user") return mjwt1
-
-  mjwt2 <- makeJWT jwk (toSqlKey 2 :: Key User)
-  jwt2 <- either (\e -> fail "Failure making JWT for test user") return mjwt2
-
-  -- Ideally this would recreate the DB each request
-  runNoLoggingT $ SQ.withSqlitePool "test.db" 10 $ \pool -> 
-    NoLoggingT $ hspec $ spec (spockAsApp $ app pool) jwt1 jwt2
+    lift $ runNoLoggingT $ SQ.withSqlitePool "test.db" 10 $ \pool -> 
+      NoLoggingT $ hspec $ spec (spockAsApp $ app pool) jwt1 jwt2
 
 formUrlEncodeQuery = foldr (\(k,v) s -> s <> "&" <> (fromStrict $ urlEncode False k) <> "=" <> (fromStrict $ urlEncode False v)) ""
 

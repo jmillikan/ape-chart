@@ -20,6 +20,10 @@ import qualified Data.Text.Encoding as DTE (decodeUtf8)
 import qualified Data.List as L (groupBy)
 import qualified Data.Maybe as DM (catMaybes)
 
+import Control.Error.Util ((!?), exceptT)
+import Control.Monad.Except (ExceptT, lift)
+import Control.Monad.Trans.Except (throwE)
+
 import Network.HTTP.Types.Status
 import Network.Wai (Middleware)
 import qualified Network.Wai.Middleware.Static as M
@@ -84,14 +88,21 @@ authFail s = setStatus status403 >> json s
 
 authenticate :: ActionCtxT () (WebStateM SqlBackend () JWK) (Key User)
 authenticate = do
-  header <- maybe (authFail "No authorization header") return =<< header "Authorization"
-  token <- maybe (authFail "Not bearer authorization") return (stripPrefix "Bearer " header)
+  exceptT authFail return $ do
+        header <- header "Authorization" !? "No authorization header"
+        token <- return (stripPrefix "Bearer " header) !? "Not bearer authorization"
 
-  jwk <- getSecret
-  either authFail return =<< liftIO (getJwtUser jwk token)
+        jwk <- lift getSecret
 
-loginFail :: ActionCtxT () (WebStateM SqlBackend () JWK) a
-loginFail = setStatus status401 >> json ("Wrong username or password" :: String)
+        getJwtUser jwk token
+
+loginFail :: Text -> ActionCtxT () (WebStateM SqlBackend () JWK) a
+loginFail s = setStatus status401 >> json s
+
+serverFail :: Text -> ActionCtxT () (WebStateM SqlBackend () JWK) a
+serverFail s = setStatus status500 >> json s
+
+-- ("Wrong username or password" :: String)
 
 unauthApi :: SpockCtxM () SqlBackend () JWK ()
 unauthApi = do
@@ -99,37 +110,32 @@ unauthApi = do
     (uname :: Text) <- param' "username"
     (password :: Text) <- param' "password"
 
-    let loginFail = do
-          setStatus status401
-          text "Wrong username or password"
+    exceptT loginFail (json . DTE.decodeUtf8) $ do
+      user <- (withDb $ PE.selectFirst [UserUsername PE.==. uname] [])
+               !? "Wrong username or password"
 
-    mUser <- withDb $ PE.selectFirst [UserUsername PE.==. uname] []
-    user <- maybe loginFail return mUser
+      let passHash = userPassword (entityVal user)
 
-    let passHash = userPassword (entityVal user)
+      when (not $ checkPassword passHash password) $
+        throwE "Wrong username or password"
 
-    when (not $ checkPassword passHash password) loginFail
-
-    jwk <- getSecret
-    result <- makeJWT jwk (entityKey user)
-
-    jwt <- either (\e -> fail "Failure making JWT claims set") return result
-    json $ DTE.decodeUtf8 jwt
+      jwk <- lift getSecret
+      makeJWT jwk (entityKey user)
 
   post ("user") $ do
     (uname :: Text) <- param' "username"
     (password :: Text) <- param' "password"
 
-    users <- withDb $ PE.selectList [UserUsername PE.==. uname] []
-    when (length users /= 0) $ fail "That username is not available."
-
-    mhash <- liftIO $ bcryptHash password
-    h <- maybe (fail "Password hashing error") return mhash
-
-    let user = User uname (DTE.decodeUtf8 h) -- Write a failing test for this...
-    newUserId <- withDb $ PE.insert user
+    exceptT serverFail json $ do
+      users <- lift $ withDb (PE.selectList [UserUsername PE.==. uname] [])
+      
+      when (length users /= 0) $
+        throwE "That username is not available."
     
-    json newUserId
+      h <- bcryptHash password
+
+      let user = User uname (DTE.decodeUtf8 h) -- Write a failing test for this...
+      lift $ withDb $ PE.insert user
 
 getUserKey :: ActionCtxT (Key User) (WebStateM SqlBackend () JWK) (Key User)
 getUserKey = getContext
